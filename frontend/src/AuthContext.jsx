@@ -6,20 +6,17 @@ export const useAuth = () => useContext(AuthContext);
 
 const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role });
 
-// The stored user is never trusted: with a token present the session is verified against GET /auth/me
-// before anything renders, so an expired/garbage token or an edited role in localStorage cannot show protected UI.
+// Session lives in an httpOnly cookie JS cannot read; GET /auth/me on load tells us whether it is valid.
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(() => !localStorage.getItem('token'));
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    if (localStorage.getItem('token')) {
-      api.get('/auth/me')
-        .then(({ data }) => { if (alive) { const u = publicUser(data); localStorage.setItem('user', JSON.stringify(u)); setUser(u); } })
-        .catch(() => { if (alive) { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null); } })
-        .finally(() => { if (alive) setReady(true); });
-    }
+    api.get('/auth/me')
+      .then(({ data }) => { if (alive) setUser(publicUser(data)); })
+      .catch(() => { if (alive) setUser(null); })
+      .finally(() => { if (alive) setReady(true); });
     const onLogout = () => setUser(null);
     window.addEventListener(LOGOUT_EVENT, onLogout);
     return () => { alive = false; window.removeEventListener(LOGOUT_EVENT, onLogout); };
@@ -27,15 +24,12 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
     setReady(true);
     return data.user;
   };
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = async () => {
+    try { await api.post('/auth/logout'); } catch { /* cookie clear is best-effort client side; server clears it on success */ }
     setUser(null);
   };
 

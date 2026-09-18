@@ -124,7 +124,7 @@ function oracle(opening, ms) {
   const victimTok = (async () => {
     const s = await call('POST', '/auth/signup', { name: 'Victim', email: 'victim@test.com', password: 'secret1' });
     await call('PATCH', `/users/${s.b.id}/approve`, undefined, A);
-    const tok = (await call('POST', '/auth/login', { email: 'victim@test.com', password: 'secret1' })).b.token;
+    const tok = (await call('POST', '/auth/login', { email: 'victim@test.com', password: 'secret1' })).token;
     await h.User.deleteOne({ _id: s.b.id });
     return tok;
   })();
@@ -144,18 +144,21 @@ function oracle(opening, ms) {
   await t('R2 every protected endpoint rejects: none / malformed / expired / deleted-user / tampered / wrong-secret / alg=none (401), state untouched', async () => {
     const dead = await victimTok;
     const [hd, , sig] = U.split('.');
+    const ck = (v) => ({ Cookie: 'token=' + v });
     const creds = {
-      'no header': undefined, 'Bearer only': 'Bearer', 'Bearer + space': 'Bearer ', 'Basic scheme': `Basic ${U}`,
-      'Bearer null': 'Bearer null', 'garbage': 'Bearer a.b.c', 'expired': 'Bearer ' + jwt.sign({ id: bobId }, process.env.JWT_SECRET, { expiresIn: -60 }),
-      'deleted user': 'Bearer ' + dead,
-      'payload tampered (role=admin, real sig)': `Bearer ${hd}.${b64({ id: bobId, role: 'admin', exp: 4102444800 })}.${sig}`,
-      'wrong-secret admin': 'Bearer ' + jwt.sign({ id: adminId, role: 'admin' }, 'not-the-secret'),
-      'alg=none': `Bearer ${b64({ alg: 'none', typ: 'JWT' })}.${b64({ id: adminId, role: 'admin' })}.`,
-      'HS512 with right secret': 'Bearer ' + jwt.sign({ id: adminId, role: 'admin' }, process.env.JWT_SECRET, { algorithm: 'HS512' }),
+      'no credentials': {}, 'empty cookie': { Cookie: 'token=' }, 'cookie "null"': ck('null'), 'garbage cookie': ck('a.b.c'),
+      'valid JWT in Authorization header only (header is ignored now)': { Authorization: 'Bearer ' + U },
+      'valid JWT under the wrong cookie name': { Cookie: 'jwt=' + U },
+      'expired': ck(jwt.sign({ id: bobId }, process.env.JWT_SECRET, { expiresIn: -60 })),
+      'deleted user': ck(dead),
+      'payload tampered (role=admin, real sig)': ck(`${hd}.${b64({ id: bobId, role: 'admin', exp: 4102444800 })}.${sig}`),
+      'wrong-secret admin': ck(jwt.sign({ id: adminId, role: 'admin' }, 'not-the-secret')),
+      'alg=none': ck(`${b64({ alg: 'none', typ: 'JWT' })}.${b64({ id: adminId, role: 'admin' })}.`),
+      'HS512 with right secret': ck(jwt.sign({ id: adminId, role: 'admin' }, process.env.JWT_SECRET, { algorithm: 'HS512' })),
     };
     const jobs = [];
     for (const [k, v] of Object.entries(creds)) for (const [method, path, body] of endpoints) jobs.push({ k, method, path, body, v });
-    const res = await inChunks(jobs, (j) => raw(j.method, j.path, { headers: { 'Content-Type': 'application/json', ...(j.v ? { Authorization: j.v } : {}) }, body: j.body ? JSON.stringify(j.body) : undefined }), 12);
+    const res = await inChunks(jobs, (j) => raw(j.method, j.path, { headers: { 'Content-Type': 'application/json', ...j.v }, body: j.body ? JSON.stringify(j.body) : undefined }), 12);
     const bad = res.map((r, i) => [r, jobs[i]]).filter(([r]) => r.s !== 401).map(([r, j]) => `${j.k} ${j.method} ${j.path} -> ${r.s}`);
     assert.deepStrictEqual(bad, []);
     assert.strictEqual((await h.User.findById(pendingId)).status, 'pending');
@@ -274,12 +277,12 @@ function oracle(opening, ms) {
     const routes = [['GET', (i) => `/materials/${i}`], ['PUT', (i) => `/materials/${i}`, { description: 'x' }], ['PATCH', (i) => `/materials/${i}/deactivate`], ['PATCH', (i) => `/materials/${i}/reactivate`],
       ['PUT', (i) => `/movements/${i}`, { note: 'x' }], ['PATCH', (i) => `/users/${i}/approve`], ['PATCH', (i) => `/users/${i}/reject`], ['PATCH', (i) => `/users/${i}/role`, { role: 'user' }]];
     const jobs = []; for (const [m, p, b] of routes) for (const id of IDS) jobs.push([m, p(id), b]);
-    const res = await inChunks(jobs, ([m, p, b]) => raw(m, p, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + A }, body: b ? JSON.stringify(b) : undefined }), 10);
+    const res = await inChunks(jobs, ([m, p, b]) => raw(m, p, { headers: { 'Content-Type': 'application/json', Cookie: 'token=' + A }, body: b ? JSON.stringify(b) : undefined }), 10);
     const bad = res.map((r, i) => [r, jobs[i]]).filter(([r]) => ![400, 404].includes(r.s) || !r.b || !r.b.message).map(([r, j]) => `${j[0]} ${j[1].slice(0, 45)} -> ${r.s}`);
     assert.deepStrictEqual(bad, []);
     // empty id segment: falls through to a JSON 404 (or the list route), not a crash
-    for (const [m, p] of [['PUT', '/materials/'], ['PATCH', '//deactivate'], ['PATCH', '/materials//deactivate'], ['PUT', '/movements/']]) ok5(await raw(m, p, { headers: { Authorization: 'Bearer ' + A, 'Content-Type': 'application/json' }, body: '{}' }), m + p);
-    for (const q of ['/movements?material=', '/movements?material=%zz', '/reports/movements/excel?material=&from=&to=', '/reports/movements/excel?material=xyz', '/movements?material=' + 'x'.repeat(5000)]) ok5(await raw('GET', q, { headers: { Authorization: 'Bearer ' + A } }), q);
+    for (const [m, p] of [['PUT', '/materials/'], ['PATCH', '//deactivate'], ['PATCH', '/materials//deactivate'], ['PUT', '/movements/']]) ok5(await raw(m, p, { headers: { Cookie: 'token=' + A, 'Content-Type': 'application/json' }, body: '{}' }), m + p);
+    for (const q of ['/movements?material=', '/movements?material=%zz', '/reports/movements/excel?material=&from=&to=', '/reports/movements/excel?material=xyz', '/movements?material=' + 'x'.repeat(5000)]) ok5(await raw('GET', q, { headers: { Cookie: 'token=' + A } }), q);
   });
   await t('R2 array/object/wrong-case ids in request BODIES are rejected or normalised (400/404/201, no 5xx)', async () => {
     const m = await h.newMaterial('IDB1');
@@ -291,14 +294,14 @@ function oracle(opening, ms) {
   });
 
   await t('R2 HTTP edge cases: bad URI 400, oversize body 413, invalid JSON 400, wrong content-type / empty body 4xx, no 5xx', async () => {
-    is({ s: (await raw('GET', '/materials/%zz', { headers: { Authorization: 'Bearer ' + A } })).s }, 400);
+    is({ s: (await raw('GET', '/materials/%zz', { headers: { Cookie: 'token=' + A } })).s }, 400);
     is({ s: (await raw('POST', '/auth/login', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'a@b.com', password: 'x'.repeat(300000) }) })).s }, 413);
     is({ s: (await raw('POST', '/auth/login', { headers: { 'Content-Type': 'application/json' }, body: '{bad' })).s }, 400);
     for (const ct of ['text/plain', 'application/x-www-form-urlencoded', undefined]) {
       const r = await raw('POST', '/auth/login', { headers: ct ? { 'Content-Type': ct } : {}, body: 'email=a@b.com&password=x' }); assert(r.s === 400, `content-type ${ct} -> ${r.s}`);
     }
     for (const [m, p] of [['PATCH', `/users/${pendingId}/role`], ['PATCH', `/users/${pendingId}/approve`], ['PUT', `/materials/${mat1}`], ['PUT', `/movements/${someMv}`], ['POST', '/movements'], ['POST', '/materials']])
-      ok5(await raw(m, p, { headers: { Authorization: 'Bearer ' + A } }), `${m} ${p} with no body`);
+      ok5(await raw(m, p, { headers: { Cookie: 'token=' + A } }), `${m} ${p} with no body`);
     const r = await raw('GET', '/nope/nothing', { headers: {} }); is(r, 404);
     assert.strictEqual((await raw('GET', '/health')).s, 200);
   });

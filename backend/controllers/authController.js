@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
-const { sign } = require('../utils/jwt');
+const { sign, verify } = require('../utils/jwt');
+const { NAME, setAuthCookie, clearAuthCookie } = require('../utils/cookie');
+const limiter = require('../utils/loginLimiter');
 const audit = require('../utils/audit');
 
 exports.signup = async (req, res, next) => {
@@ -23,17 +25,48 @@ const DUMMY_HASH = bcrypt.hashSync('timing-equaliser', 10);
 
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
+    const { password } = req.body;
+    const email = req.body.email.toLowerCase();
+
+    // charged up front: the lockout depends on how many attempts were made, never on whether one was correct
+    const { blocked, retryAfterSeconds } = await limiter.charge(email);
+    if (blocked) {
+      res.set('Retry-After', String(retryAfterSeconds));
+      return res.status(429).json({
+        message: `Too many login attempts. Try again in ${Math.ceil(retryAfterSeconds / 60)} minute(s).`,
+        retryAfterSeconds,
+      });
+    }
+
+    const user = await User.findOne({ email }).select('+passwordHash +tokenVersion');
     const ok = user ? await user.comparePassword(password) : (await bcrypt.compare(password, DUMMY_HASH), false);
     if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
+
+    await limiter.reset(email); // correct password: the counter starts over
     if (user.status === 'pending') return res.status(403).json({ message: 'Account pending admin approval' });
     if (user.status === 'rejected') return res.status(403).json({ message: 'Account rejected' });
     await audit(req, 'LOGIN', 'User', user._id, {}, user);
-    res.json({
-      token: sign(user),
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
-    });
+    setAuthCookie(res, sign(user)); // the token is never put in the response body
+    res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+  } catch (e) {
+    next(e);
+  }
+};
+
+exports.logout = async (req, res, next) => {
+  try {
+    const token = req.cookies && req.cookies[NAME];
+    if (typeof token === 'string' && token) {
+      try {
+        // bump tokenVersion so the token that was just in the cookie is dead server-side too, even if a copy exists somewhere
+        const p = verify(token);
+        const same = (p.tv || 0) === 0 ? [{ tokenVersion: 0 }, { tokenVersion: { $exists: false } }] : [{ tokenVersion: p.tv }];
+        const user = await User.findOneAndUpdate({ _id: p.id, $or: same }, { $inc: { tokenVersion: 1 } }, { returnDocument: 'after' });
+        if (user) await audit(req, 'LOGOUT', 'User', user._id, {}, user);
+      } catch { /* invalid/expired token: nothing to revoke, still clear the cookie */ }
+    }
+    clearAuthCookie(res);
+    res.json({ message: 'Logged out' });
   } catch (e) {
     next(e);
   }

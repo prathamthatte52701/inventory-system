@@ -1,21 +1,13 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api' });
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api', withCredentials: true }) // session = httpOnly cookie;
 
 export const MAX_NUM = 1e9; // same limit the API enforces for quantities and rates
 export const LOGOUT_EVENT = 'auth:logout';
 
 export const clearSession = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
   window.dispatchEvent(new Event(LOGOUT_EVENT)); // AuthProvider drops the user, ProtectedRoute redirects to /login
 };
-
-api.interceptors.request.use((cfg) => {
-  const token = localStorage.getItem('token');
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
-});
 
 // A 401 while holding a session = expired/invalid token; 403 "Account not approved" = revoked after login.
 // (Wrong password on /login has no session, so it just errors.)
@@ -24,7 +16,7 @@ api.interceptors.response.use(
   (err) => {
     const s = err.response?.status;
     const revoked = s === 403 && err.response?.data?.message === 'Account not approved';
-    if ((s === 401 || revoked) && localStorage.getItem('token')) clearSession();
+    if ((s === 401 || revoked) && !/\/auth\/(login|me|logout)$/.test(err.config?.url || '')) clearSession();
     return Promise.reject(err);
   }
 );

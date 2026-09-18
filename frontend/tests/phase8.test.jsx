@@ -158,7 +158,7 @@ describe('Phase 8 brutal', () => {
     expect(within(nav).getByText(/Pratham Thatte/)).toBeInTheDocument();
     await userEvent.click(within(nav).getByRole('button', { name: 'Logout' }));
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.length).toBe(0);
   });
 });
 
@@ -242,12 +242,12 @@ describe('Phase 8 break', () => {
     expect(files).toHaveLength(0);
   });
 
-  it('expired/invalid token on an API call clears the session (401 interceptor)', async () => {
-    const { user } = await session(ADMIN);
-    localStorage.setItem('token', 'not.a.real.token');
+  it('session revoked server-side: next API call clears the session (401 interceptor)', async () => {
+    await session(ADMIN);
     renderApp('/');
-    await waitFor(() => expect(localStorage.getItem('token')).toBeNull(), { timeout: 8000 });
-    expect(localStorage.getItem('user')).toBeNull();
-    expect(user.role).toBe('admin');
+    await screen.findByRole('navigation');
+    await (await adminApi()).post('/auth/logout'); // logout bumps tokenVersion: the browser's cookie is now revoked
+    await userEvent.click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Materials' }));
+    expect(await screen.findByRole('heading', { name: 'Log in' }, { timeout: 8000 })).toBeInTheDocument();
   });
 });

@@ -13,6 +13,9 @@ const materialSchema = new mongoose.Schema({
   currentQuantity: signedNum, // system-maintained
   minimumQuantity: num,
   isActive: { type: Boolean, default: true },
+  // cross-process lock (see utils/costing.js withLock); never loaded or serialised
+  lockedUntil: { type: Date, select: false },
+  lockToken: { type: String, select: false },
   createdBy: { type: ObjectId, ref: 'User' },
 }, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 

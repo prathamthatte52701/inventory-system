@@ -5,7 +5,7 @@ const zlib = require('zlib');
 module.exports = function pdfText(buf) {
   const bin = buf.toString('latin1');
   let out = '';
-  for (const m of bin.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+  for (const m of bin.matchAll(/>>\s*stream\r?\n([\s\S]*?)\nendstream/g)) {
     let s;
     try { s = zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch { continue; }
     for (const tj of s.matchAll(/\[(.*?)\]\s*TJ/g)) {

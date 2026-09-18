@@ -1,9 +1,18 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 
 const app = express();
-app.use(cors({ exposedHeaders: ['Content-Disposition'] })); // lets a cross-origin frontend read the download filename
+// Credentialed CORS: only the listed origins may send the session cookie (the wildcard is not allowed with credentials).
+// Vite's dev proxy makes the app same-origin, so this only matters when the frontend is served from another origin.
+const allowedOrigins = () => (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || allowedOrigins().includes(origin)),
+  credentials: true,
+  exposedHeaders: ['Content-Disposition', 'Retry-After'], // readable by a cross-origin frontend
+}));
+app.use(cookieParser());
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => { // express 5 leaves req.body undefined when no JSON was sent; controllers expect an object
   if (req.body === undefined) req.body = {};

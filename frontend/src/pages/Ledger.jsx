@@ -16,7 +16,7 @@ export default function Ledger() {
 
   useEffect(() => { api.get('/materials').then((r) => setMaterials(r.data)).catch((e) => setError(errMsg(e))); }, []);
   const load = useCallback(
-    () => api.get('/movements', { params: filter ? { material: filter } : {} }).then((r) => setRows(r.data)).catch((e) => setError(errMsg(e))),
+    () => api.get('/movements', { params: { limit: 200, ...(filter ? { material: filter } : {}) } }).then((r) => setRows(r.data.data)).catch((e) => setError(errMsg(e))),
     [filter]
   );
   useEffect(() => { load(); }, [load]);

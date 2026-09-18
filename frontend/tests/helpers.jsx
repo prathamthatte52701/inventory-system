@@ -19,17 +19,18 @@ const env = Object.fromEntries(
 export const JWT_SECRET = env.JWT_SECRET;
 export const ADMIN = { email: env.ADMIN1_EMAIL, password: env.ADMIN1_PASSWORD };
 
-const raw = axios.create({ baseURL: BASE });
-export const as = (token) => axios.create({ baseURL: BASE, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+const raw = axios.create({ baseURL: BASE, adapter: 'http' }) // node http: no CORS, Set-Cookie readable;
+// the session is an httpOnly cookie now; `cookie` is the raw "token=..." pair from Set-Cookie
+export const as = (cookie) => axios.create({ baseURL: BASE, adapter: 'http', headers: cookie ? { Cookie: cookie } : {} });
 
 let n = 0;
 export const uid = (p = 'X') => `${p}${Date.now().toString(36)}${n++}`.toUpperCase();
 
 export async function loginApi({ email, password }) {
-  const { data } = await raw.post('/auth/login', { email, password });
-  return data; // { token, user }
+  const res = await raw.post('/auth/login', { email, password });
+  return { user: res.data.user, cookie: res.headers['set-cookie'][0].split(';')[0], setCookie: res.headers['set-cookie'] };
 }
-export const adminApi = async () => as((await loginApi(ADMIN)).token);
+export const adminApi = async () => as((await loginApi(ADMIN)).cookie);
 
 // creates + approves a normal user; returns { email, password, id }
 export async function makeUser(name = 'Test User') {
@@ -40,12 +41,11 @@ export async function makeUser(name = 'Test User') {
   return { email, password, id: data.id, name };
 }
 
-// puts a real session into localStorage (what the app reads on load)
+// logs in through the app's own axios instance so the httpOnly cookie lands in the jsdom cookie jar
 export async function session(creds) {
-  const { token, user } = await loginApi(creds);
-  localStorage.setItem('token', token);
-  localStorage.setItem('user', JSON.stringify(user));
-  return { token, user };
+  const { default: api } = await import('../src/api');
+  const { data } = await api.post('/auth/login', creds);
+  return { user: data.user };
 }
 
 // browser-history stand-ins so tests can press Back/Forward

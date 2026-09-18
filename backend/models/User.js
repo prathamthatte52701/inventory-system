@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema({
   },
   passwordHash: { type: String, required: true, select: false },
   role: { type: String, enum: ['admin', 'user'], default: 'user' },
+  tokenVersion: { type: Number, default: 0, select: false }, // bumped on logout to revoke issued tokens
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approvedAt: Date,

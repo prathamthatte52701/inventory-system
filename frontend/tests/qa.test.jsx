@@ -3,10 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import api from '../src/api';
-import { ADMIN, JWT_SECRET, adminApi, makeUser, session, renderApp, uid, as, backendRequire } from './helpers';
+import { ADMIN, loginApi, adminApi, makeUser, session, renderApp, uid, as, backendRequire } from './helpers';
 
-const jwt = backendRequire('jsonwebtoken');
-const type = async (label, text) => { const el = screen.getByLabelText(label); await userEvent.clear(el); await userEvent.type(el, text); };
+const type = async (label, text) => { const el = await screen.findByLabelText(label); await userEvent.clear(el); await userEvent.type(el, text); };
 const calls = (spy, url) => spy.mock.calls.filter((c) => c[0] === url).length;
 const anyStatus = { validateStatus: () => true };
 
@@ -35,7 +34,7 @@ describe('Round 4 · empty required fields', () => {
   it('login: empty submit shows a message and sends nothing', async () => {
     const spy = vi.spyOn(api, 'post');
     renderApp('/login');
-    await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Log in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/enter your email and password/i);
     expect(calls(spy, '/auth/login')).toBe(0);
     await type('Email', 'someone@test.com');
@@ -47,7 +46,7 @@ describe('Round 4 · empty required fields', () => {
   it('signup: empty / short-password submits are blocked client-side', async () => {
     const spy = vi.spyOn(api, 'post');
     renderApp('/signup');
-    await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign up' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/required/i);
     await type('Name', 'A'); await type('Email', 'a@test.com'); await type('Password', '123');
     await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
@@ -152,7 +151,7 @@ describe('Round 4 · rapid double-click (exactly one request, no phantom error)'
     await userEvent.dblClick(screen.getByRole('button', { name: 'Record Movement' }));
     await waitFor(() => expect(screen.getByTestId('balance')).toHaveTextContent('10'));
     expect(calls(spy, '/movements')).toBe(1);
-    expect((await m.api.get('/movements', { params: { material: m._id } })).data).toHaveLength(1);
+    expect((await m.api.get('/movements', { params: { material: m._id } })).data.data).toHaveLength(1);
   });
 
   it('ledger save: one PUT', async () => {
@@ -215,7 +214,7 @@ describe('Round 4 · Back / Forward button', () => {
     await screen.findByRole('heading', { name: 'Log in' });
     expect(w.seen.hit).toBe(false);
     expect(screen.queryByRole('navigation')).toBeNull();
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.length).toBe(0);
     w.stop();
   });
 
@@ -237,45 +236,14 @@ describe('Round 4 · Back / Forward button', () => {
 });
 
 describe('Round 4 · session abuse', () => {
-  it('garbage token: clean redirect to login, storage cleared, protected page never rendered', async () => {
-    localStorage.setItem('token', 'garbage'); localStorage.setItem('user', JSON.stringify({ name: 'x', role: 'admin' }));
+  it('no session: clean redirect to login, protected page never rendered', async () => {
     const w = watchFor('Material Master');
     renderApp('/materials');
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toBeNull(); expect(localStorage.getItem('user')).toBeNull();
+    expect(localStorage.length).toBe(0);
     expect(w.seen.hit).toBe(false);
     expect(screen.queryByRole('navigation')).toBeNull();
     w.stop();
-  });
-
-  it('expired token and tampered token: same clean redirect', async () => {
-    const u = await session(await makeUser());
-    for (const bad of [jwt.sign({ id: u.user.id }, JWT_SECRET, { expiresIn: -60 }), u.token.slice(0, -4) + 'AAAA', jwt.sign({ id: u.user.id, role: 'admin' }, 'wrong-secret')]) {
-      localStorage.setItem('token', bad);
-      const { unmount } = renderApp('/');
-      expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-      expect(localStorage.getItem('token')).toBeNull();
-      unmount();
-    }
-  });
-
-  it('corrupt stored user JSON with a valid token: app recovers from /auth/me', async () => {
-    await session(await makeUser('Recovered Rita'));
-    localStorage.setItem('user', '{not json');
-    renderApp('/');
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(within(screen.getByRole('navigation')).getByText('Recovered Rita')).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem('user')).name).toBe('Recovered Rita');
-  });
-
-  it('token expires while using the app: next API call logs out cleanly', async () => {
-    const u = await session(await makeUser());
-    renderApp('/');
-    await screen.findByRole('heading', { name: 'Dashboard' });
-    localStorage.setItem('token', jwt.sign({ id: u.user.id }, JWT_SECRET, { expiresIn: -5 }));
-    await userEvent.click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Materials' }));
-    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toBeNull();
   });
 
   it('edited role in localStorage does not unlock admin UI (server role wins) and never flashes it', async () => {
@@ -288,7 +256,6 @@ describe('Round 4 · session abuse', () => {
     const nav = screen.getByRole('navigation');
     expect(within(nav).queryByRole('link', { name: 'Users' })).toBeNull();
     expect(within(nav).queryByText(/admin/)).toBeNull();
-    expect(JSON.parse(localStorage.getItem('user')).role).toBe('user');
     w.stop();
   });
 });
@@ -322,7 +289,7 @@ describe('Round 4 · numbers: client and API agree', () => {
   it('quantity field: -5, 0, 1e15, 1e999, text are blocked; 0.5 and 1e9 go through', async () => {
     const m = await newMat('NUM', { openingQuantity: 10, openingRate: 4 });
     const u = await makeUser();
-    const { token } = await session(u);
+    await session(u); const { cookie: token } = await loginApi(u);
     const spy = vi.spyOn(api, 'post');
     renderApp('/movement');
     await matOption(m._id);

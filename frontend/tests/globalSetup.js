@@ -9,6 +9,8 @@ const require = createRequire(path.join(backend, 'x.js'));
 export default async function setup() {
   require('dotenv').config({ path: path.join(backend, '.env'), quiet: true });
   process.env.NODE_ENV = 'test';
+  process.env.COOKIE_SECURE = 'false'; // jsdom talks plain http to the test server
+  process.env.CORS_ORIGIN = 'http://localhost:3000'; // jsdom's origin
   const mongoose = require('mongoose');
   await require(path.join(backend, 'config/db.js'))({ dbName: 'inventory_test_ui' });
   await mongoose.connection.dropDatabase();

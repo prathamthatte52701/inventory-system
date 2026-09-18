@@ -19,7 +19,7 @@ const sheet = async (buf) => { const wb = new ExcelJS.Workbook(); await wb.xlsx.
   });
   await t('2. admin approves', async () => is(await call('PATCH', `/users/${uid}/approve`, undefined, A), 200));
   await t('3. new user cannot create a material (403)', async () => {
-    const l = await call('POST', '/auth/login', { email, password }); is(l, 200); U = l.b.token;
+    const l = await call('POST', '/auth/login', { email, password }); is(l, 200); U = l.token;
     const r = await call('POST', '/materials', { materialId: 'CEM1', description: 'Cement', unit: 'Bag' }, U);
     is(r, 403);
   });

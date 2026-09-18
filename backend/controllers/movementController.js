@@ -60,15 +60,29 @@ exports.create = wrap(async (req, res) => {
   res.status(201).json(body);
 });
 
+const DEFAULT_LIMIT = 50, MAX_LIMIT = 200;
+// query value -> positive integer. Missing = default; anything else that is not plain digits >= 1 is a 400.
+const positiveInt = (v, def, name) => {
+  if (v === undefined) return def;
+  const n = typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN;
+  if (!Number.isSafeInteger(n) || n < 1) throw fail(400, `${name} must be a positive whole number`);
+  return n;
+};
+
 exports.list = wrap(async (req, res) => {
   const filter = {};
   if (req.query.material !== undefined) {
     if (!isId(req.query.material)) throw fail(400, 'Invalid material id');
     filter.material = req.query.material;
   }
-  res.json(await Movement.find(filter).sort(ORDER)
+  const page = positiveInt(req.query.page, 1, 'page');
+  const limit = Math.min(positiveInt(req.query.limit, DEFAULT_LIMIT, 'limit'), MAX_LIMIT); // oversize limit is clamped
+  const total = await Movement.countDocuments(filter);
+  const skip = (page - 1) * limit;
+  const data = skip >= total ? [] : await Movement.find(filter).sort(ORDER).skip(skip).limit(limit) // past the last page: empty, not an error
     .populate('material', 'materialId description unit')
-    .populate('createdBy', 'name'));
+    .populate('createdBy', 'name');
+  res.json({ data, page, limit, total, totalPages: Math.ceil(total / limit) });
 });
 
 exports.update = wrap(async (req, res) => {

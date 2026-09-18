@@ -9,6 +9,7 @@ const { ORDER } = require('../utils/costing');
 const fail = (message) => Object.assign(new Error(message), { status: 400 });
 const wrap = (fn) => async (req, res, next) => {
   try { await fn(req, res); } catch (e) {
+    if (res.headersSent) return res.destroy(e); // streaming already began: a truncated download must look truncated
     if (e.status) return res.status(e.status).json({ message: e.message });
     next(e);
   }
@@ -34,33 +35,42 @@ exports.dashboard = wrap(async (req, res) => {
   });
 });
 
-async function sendWorkbook(res, filename, sheetName, columns, rows) {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(sheetName);
-  ws.columns = columns;
-  ws.getRow(1).font = { bold: true };
-  ws.addRows(rows);
+// Exports are complete (every matching row) but never held in memory: rows come from a database cursor and are
+// written to the response as they arrive, so memory stays flat however large the dataset is.
+async function streamWorkbook(res, filename, sheetName, columns, rows) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  await wb.xlsx.write(res);
-  res.end();
+  const wb = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: true });
+  const ws = wb.addWorksheet(sheetName);
+  ws.columns = columns;
+  const header = ws.getRow(1);
+  header.values = columns.map((c) => c.header);
+  header.font = { bold: true };
+  header.commit();
+  for await (const row of rows) ws.addRow(row).commit();
+  ws.commit();
+  await wb.commit();
 }
 
+const BATCH = 500;
+async function* cursorRows(cursor, map) {
+  try { for await (const doc of cursor) yield map(doc); } finally { await cursor.close().catch(() => {}); }
+}
+const activeMaterialCursor = () => Material.find({ isActive: true }).sort({ materialId: 1 }).cursor({ batchSize: BATCH });
+
 exports.stockExcel = wrap(async (req, res) => {
-  const ms = await activeMaterials();
-  await sendWorkbook(res, `stock-value-${stamp()}.xlsx`, 'Stock Value', [
+  await streamWorkbook(res, `stock-value-${stamp()}.xlsx`, 'Stock Value', [
     { header: 'Material ID', key: 'id', width: 16 }, { header: 'Description', key: 'desc', width: 32 },
     { header: 'Unit', key: 'unit', width: 10 }, { header: 'Current Qty', key: 'qty', width: 14 },
     { header: 'Rate', key: 'rate', width: 12 }, { header: 'Stock Value', key: 'value', width: 16 },
     { header: 'Status', key: 'status', width: 14 },
-  ], ms.map((m) => ({
+  ], cursorRows(activeMaterialCursor(), (m) => ({
     id: m.materialId, desc: m.description, unit: m.unit, qty: m.currentQuantity,
     rate: m.currentRate, value: m.stockValue, status: STATUS[m.status],
   })));
 });
 
 exports.stockPdf = wrap(async (req, res) => {
-  const ms = await activeMaterials();
   const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="stock-value-${stamp()}.pdf"`);
@@ -79,8 +89,15 @@ exports.stockPdf = wrap(async (req, res) => {
     doc.x = 40;
   };
   row(cols.map((c) => c[0]), true);
-  if (!ms.length) doc.font('Helvetica').text('No materials.', 40);
-  ms.forEach((m) => row([m.materialId, m.description, m.unit, m.currentQuantity, m.currentRate.toFixed(2), m.stockValue.toFixed(2), STATUS[m.status]]));
+  let any = false;
+  const cursor = activeMaterialCursor();
+  try {
+    for await (const m of cursor) {
+      any = true;
+      row([m.materialId, m.description, m.unit, m.currentQuantity, m.currentRate.toFixed(2), m.stockValue.toFixed(2), STATUS[m.status]]);
+    }
+  } finally { await cursor.close().catch(() => {}); }
+  if (!any) doc.font('Helvetica').text('No materials.', 40);
   doc.end();
 });
 
@@ -103,14 +120,14 @@ exports.movementsExcel = wrap(async (req, res) => {
   if (from && to && from > to) throw fail('"from" must not be after "to"');
   if (from || to) filter.movementDate = { ...(from && { $gte: from }), ...(to && { $lte: to }) };
 
-  const ms = await Movement.find(filter).sort(ORDER).populate('material', 'materialId description').populate('createdBy', 'name');
-  await sendWorkbook(res, `movements-${stamp()}.xlsx`, 'Movements', [
+  const cursor = Movement.find(filter).sort(ORDER).populate('material', 'materialId description').populate('createdBy', 'name').cursor({ batchSize: BATCH });
+  await streamWorkbook(res, `movements-${stamp()}.xlsx`, 'Movements', [
     { header: 'Date', key: 'date', width: 14 }, { header: 'Material ID', key: 'id', width: 16 },
     { header: 'Description', key: 'desc', width: 28 }, { header: 'Type', key: 'type', width: 10 },
     { header: 'Qty', key: 'qty', width: 12 }, { header: 'Rate', key: 'rate', width: 12 },
     { header: 'Amount', key: 'amount', width: 14 }, { header: 'Balance', key: 'bal', width: 12 },
     { header: 'Entered By', key: 'by', width: 20 }, { header: 'Note', key: 'note', width: 30 },
-  ], ms.map((m) => ({
+  ], cursorRows(cursor, (m) => ({
     date: m.movementDate.toISOString().slice(0, 10), id: m.material && m.material.materialId,
     desc: m.material && m.material.description, type: m.type, qty: m.quantity, rate: m.rate,
     amount: m.amount, bal: m.balanceAfter, by: m.createdBy && m.createdBy.name, note: m.note || '',

@@ -77,6 +77,7 @@ exports.update = async (req, res, next) => {
     });
     res.status(out.s).json(out.b);
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ message: e.message });
     if (e.name === 'ValidationError') return bad(res, e.message);
     next(e);
   }

@@ -393,12 +393,11 @@ A separate adversarial pass (spec check against the PDF, attack patterns, concur
 | 66 | Frontend only checked `quantity > 0`, so `1e15` and `1e999` reached the API | Client limit matches the API (0 to 1e9) |
 | 67 | A user revoked after login kept seeing a half-working app (403s) | "Account not approved" now clears the session |
 
+**Fixed in the latest pass:** login rate limiting (5 failures / 15 min per email, stored in MongoDB, 429 + `Retry-After`); `GET /movements` pagination (`?page`, `?limit` max 200; exports stream via cursor); the JWT now lives in an httpOnly, SameSite=Strict, Secure cookie (no `localStorage`; `POST /auth/logout` clears it and revokes the token); the material lock is a MongoDB lease (`lockedUntil`) so multiple API instances are safe.
+
 **Known limitations** (not bugs against the spec, but worth knowing before exposing this publicly):
-- There is **no login rate limiting or lockout**. Put the API behind a reverse proxy or add `express-rate-limit`.
-- `GET /movements` and the exports are not paginated.
-- The JWT lives in `localStorage` (standard for this design, but readable by any XSS; React escapes all output and no HTML is ever injected).
 - `helmet`-style security headers beyond `nosniff` are not set.
-- The concurrency lock is per process; run a single API instance, or move to database transactions.
+- The cookie is `Secure`: over plain HTTP on a non-localhost host set `COOKIE_SECURE=false`, and set `CORS_ORIGIN` if the frontend is on another origin.
 - Anyone can sign up (by design); an existing email returns 409, which reveals that the email is registered.
 
 ## Troubleshooting

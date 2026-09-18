@@ -11,6 +11,7 @@ const password = body('password').isString().isLength({ min: 6, max: 128 }).with
 
 router.post('/signup', str('name', { max: 100, required: true }), email, password, validate, c.signup);
 router.post('/login', email, body('password').isString().isLength({ min: 1, max: 128 }).withMessage('Password required'), validate, c.login);
+router.post('/logout', c.logout);
 router.get('/me', requireAuth, c.me);
 
 module.exports = router;

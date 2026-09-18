@@ -4,17 +4,16 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ADMIN, adminApi, makeUser, session, renderApp, uid, as } from './helpers';
 
-const type = async (label, text) => { const el = screen.getByLabelText(label); await userEvent.clear(el); await userEvent.type(el, text); };
+const type = async (label, text) => { const el = await screen.findByLabelText(label); await userEvent.clear(el); await userEvent.type(el, text); };
 
 describe('Phase 7 brutal', () => {
-  it('login: admin logs in, JWT + user stored, lands on dashboard', async () => {
+  it('login: admin logs in, cookie session, lands on dashboard', async () => {
     renderApp('/login');
     await type('Email', ADMIN.email);
     await type('Password', ADMIN.password);
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toMatch(/^eyJ/);
-    expect(JSON.parse(localStorage.getItem('user')).role).toBe('admin');
+    expect(localStorage.length).toBe(0); // nothing stored where script can read it
     expect(screen.getByText('Logout')).toBeInTheDocument();
   });
 
@@ -25,7 +24,7 @@ describe('Phase 7 brutal', () => {
     await type('Password', 'secret1');
     await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
     expect(await screen.findByText(/waiting for admin approval/i)).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.length).toBe(0);
   });
 
   it('dashboard + material list render real backend data', async () => {
@@ -111,7 +110,7 @@ describe('Phase 7 brutal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Record Movement' }));
     await waitFor(() => expect(screen.getByTestId('balance')).toHaveTextContent('70'));
 
-    const { data: list } = await api.get('/movements', { params: { material: (await api.get('/materials')).data.find((m) => m.materialId === id)._id } });
+    const { data: { data: list } } = await api.get('/movements', { params: { material: (await api.get('/materials')).data.find((m) => m.materialId === id)._id } });
     expect(list.map((m) => [m.type, m.quantity, m.balanceAfter, m.amount])).toEqual([['IN', 100, 100, 40000], ['OUT', 30, 70, 12000]]);
   });
 });
@@ -124,7 +123,7 @@ describe('Phase 7 break', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/invalid email or password/i);
     expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.length).toBe(0);
   });
 
   it('pending user login shows the API message', async () => {
@@ -144,7 +143,7 @@ describe('Phase 7 break', () => {
 
   it('movement form with no material selected is blocked client-side', async () => {
     const api = await adminApi();
-    const before = (await api.get('/movements')).data.length;
+    const before = (await api.get('/movements')).data.data.length;
     await session(await makeUser());
     renderApp('/movement');
     await screen.findByLabelText('Material');
@@ -152,7 +151,7 @@ describe('Phase 7 break', () => {
     await type('Rate', '10');
     await userEvent.click(screen.getByRole('button', { name: 'Record Movement' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Please select a material');
-    expect((await api.get('/movements')).data.length).toBe(before); // nothing was sent
+    expect((await api.get('/movements')).data.data.length).toBe(before); // nothing was sent
   });
 
   it('bad quantity / missing IN rate are blocked client-side', async () => {

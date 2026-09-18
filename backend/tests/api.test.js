@@ -17,12 +17,13 @@ const t = async (name, fn) => {
 const call = async (method, path, body, token) => {
   const r = await fetch(base + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Cookie: 'token=' + token } : {}) },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   });
   let json = null;
   try { json = await r.json(); } catch { /* empty */ }
-  return { s: r.status, b: json };
+  const sc = (r.headers.getSetCookie ? r.headers.getSetCookie() : []).find((x) => x.startsWith('token='));
+  return { s: r.status, b: json, token: sc ? sc.slice(6, sc.indexOf(';')) : undefined };
 };
 const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON.stringify(r.b)}`);
 
@@ -50,7 +51,7 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
   const admin = await call('POST', '/auth/login', { email: process.env.ADMIN1_EMAIL, password: process.env.ADMIN1_PASSWORD });
   let A;
   await t('admin login ok + JWT payload', async () => {
-    is(admin, 200); A = admin.b.token;
+    is(admin, 200); A = admin.token;
     const p = jwt.verify(A, process.env.JWT_SECRET);
     assert(p.id && p.role === 'admin' && p.exp);
     assert(!JSON.stringify(admin.b).includes('passwordHash'));
@@ -86,7 +87,7 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
   let U;
   await t('login ok after approval', async () => {
     const r = await call('POST', '/auth/login', { email: 'bob@test.com', password: 'secret1' });
-    is(r, 200); U = r.b.token; assert.strictEqual(r.b.user.role, 'user');
+    is(r, 200); U = r.token; assert.strictEqual(r.b.user.role, 'user');
   });
   await t('reject flow blocks login', async () => {
     const eve = await User.findOne({ email: 'eve@test.com' });
