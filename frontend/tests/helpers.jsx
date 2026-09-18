@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { vi } from 'vitest';
 import { AuthProvider } from '../src/AuthContext';
@@ -16,6 +16,7 @@ export const backendRequire = createRequire(path.join(backend, 'x.js'));
 const env = Object.fromEntries(
   fs.readFileSync(path.join(backend, '.env'), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])
 );
+export const JWT_SECRET = env.JWT_SECRET;
 export const ADMIN = { email: env.ADMIN1_EMAIL, password: env.ADMIN1_PASSWORD };
 
 const raw = axios.create({ baseURL: BASE });
@@ -47,10 +48,15 @@ export async function session(creds) {
   return { token, user };
 }
 
-export const renderApp = (route = '/') =>
+// browser-history stand-ins so tests can press Back/Forward
+function HistoryButtons() {
+  const nav = useNavigate();
+  return <div><button onClick={() => nav(-1)}>test-back</button><button onClick={() => nav(1)}>test-forward</button></div>;
+}
+export const renderApp = (route = '/', { entries, index } = {}) =>
   render(
-    <MemoryRouter initialEntries={[route]}>
-      <AuthProvider><App /></AuthProvider>
+    <MemoryRouter initialEntries={entries || [route]} initialIndex={index}>
+      <AuthProvider><App /><HistoryButtons /></AuthProvider>
     </MemoryRouter>
   );
 

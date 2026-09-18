@@ -9,14 +9,14 @@ const seedAdmins = require('../utils/seedAdmins');
 
 module.exports = async function setup(label) {
   let base, pass = 0, fail = 0;
-  await require('../config/db')({ dbName: 'inventory_test' });
+  await require('../config/db')({ dbName: process.env.TEST_DB || 'inventory_test' });
   await mongoose.connection.dropDatabase();
   await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
   const server = app.listen(0);
   base = `http://127.0.0.1:${server.address().port}/api`;
 
   const h = {
-    assert, mongoose,
+    assert, mongoose, base,
     t: async (name, fn) => { try { await fn(); pass++; } catch (e) { fail++; console.log('FAIL', name, '-', e.message); } },
     is: (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON.stringify(r.b)}`),
     near: (a, b, eps = 0.01) => assert(Math.abs(a - b) <= eps, `expected ~${b} got ${a}`),

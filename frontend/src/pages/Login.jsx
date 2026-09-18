@@ -1,28 +1,32 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { errMsg } from '../api';
+import { useGuard } from '../useGuard';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { user, ready, login } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [run, busy] = useGuard();
 
-  const submit = async (e) => {
+  if (!ready) return null;
+  if (user) return <Navigate to="/" replace />; // already signed in (e.g. pressed Back to here)
+
+  const submit = (e) => {
     e.preventDefault();
-    setError('');
-    setBusy(true);
-    try {
-      await login(email, password);
-      nav('/');
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
+    return run(async () => {
+      setError('');
+      if (!email.trim() || !password) return setError('Enter your email and password');
+      try {
+        await login(email.trim(), password);
+        nav('/');
+      } catch (err) {
+        setError(errMsg(err));
+      }
+    });
   };
 
   return (

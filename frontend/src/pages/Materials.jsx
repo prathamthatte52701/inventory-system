@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import api, { errMsg, fmt } from '../api';
+import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
+import { useGuard } from '../useGuard';
 import { useAuth } from '../AuthContext';
 
 const LABEL = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
@@ -9,28 +10,39 @@ export default function Materials() {
   const { isAdmin } = useAuth();
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
+  const [run] = useGuard();
   const [form, setForm] = useState(null); // null = closed; { _id? , ...fields }
 
   const load = useCallback(() => api.get('/materials').then((r) => setItems(r.data)).catch((e) => setError(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
 
-  const save = async (e) => {
+  const save = (e) => {
     e.preventDefault();
-    setError('');
-    const { _id, materialId, ...rest } = form;
-    try {
-      if (_id) await api.put(`/materials/${_id}`, rest);
-      else await api.post('/materials', { materialId, ...rest });
-      setForm(null);
-      load();
-    } catch (err) {
-      setError(errMsg(err));
-    }
+    return run(async () => {
+      setError('');
+      const { _id, materialId, ...rest } = form;
+      if (!_id && !materialId.trim()) return setError('Material ID is required');
+      if (!rest.description.trim() || !rest.unit.trim()) return setError('Description and unit are required');
+      const nums = {};
+      for (const k of ['openingRate', 'openingQuantity', 'minimumQuantity']) {
+        nums[k] = parseNum(rest[k], 0);
+        if (Number.isNaN(nums[k])) return setError(`${k} must be a number from 0 to ${fmt(MAX_NUM)}`);
+      }
+      try {
+        const body = { ...rest, ...nums };
+        if (_id) await api.put(`/materials/${_id}`, body);
+        else await api.post('/materials', { materialId: materialId.trim(), ...body });
+        setForm(null);
+        await load();
+      } catch (err) {
+        setError(errMsg(err));
+      }
+    });
   };
-  const toggle = async (m) => {
+  const toggle = (m) => run(async () => {
     setError('');
-    try { await api.patch(`/materials/${m._id}/${m.isActive ? 'deactivate' : 'reactivate'}`); load(); } catch (err) { setError(errMsg(err)); }
-  };
+    try { await api.patch(`/materials/${m._id}/${m.isActive ? 'deactivate' : 'reactivate'}`); await load(); } catch (err) { setError(errMsg(err)); }
+  });
   const edit = (m) => setForm({
     _id: m._id, materialId: m.materialId, description: m.description, unit: m.unit,
     openingRate: String(m.openingRate), openingQuantity: String(m.openingQuantity), minimumQuantity: String(m.minimumQuantity),

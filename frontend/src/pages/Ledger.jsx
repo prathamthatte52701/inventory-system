@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import api, { errMsg, fmt } from '../api';
+import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
+import { useGuard } from '../useGuard';
 import { useAuth } from '../AuthContext';
 
 const day = (d) => String(d).slice(0, 10);
@@ -10,6 +11,7 @@ export default function Ledger() {
   const [filter, setFilter] = useState('');
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
+  const [run] = useGuard();
   const [edit, setEdit] = useState(null); // { id, type, quantity, rate, date, origDate, note }
 
   useEffect(() => { api.get('/materials').then((r) => setMaterials(r.data)).catch((e) => setError(errMsg(e))); }, []);
@@ -25,13 +27,20 @@ export default function Ledger() {
   });
   const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
 
-  const save = async () => {
+  const save = () => run(async () => {
     setError('');
-    if (!(Number(edit.quantity) > 0)) return setError('Quantity must be greater than 0');
-    if (edit.type === 'IN' && (edit.rate === '' || Number(edit.rate) < 0)) return setError('Rate is required for IN');
-    const body = { type: edit.type, quantity: Number(edit.quantity), note: edit.note };
-    if (edit.type === 'IN') body.enteredRate = Number(edit.rate);
-    if (edit.date !== edit.origDate) body.movementDate = edit.date; // untouched date keeps its original time/order
+    const quantity = parseNum(edit.quantity, 0.0001);
+    if (Number.isNaN(quantity)) return setError(`Quantity must be a number greater than 0 and at most ${fmt(MAX_NUM)}`);
+    const body = { type: edit.type, quantity, note: edit.note };
+    if (edit.type === 'IN') {
+      const rate = parseNum(edit.rate, 0);
+      if (Number.isNaN(rate)) return setError('Rate is required for IN');
+      body.enteredRate = rate;
+    }
+    if (edit.date !== edit.origDate) {
+      if (!edit.date) return setError('Please pick a date');
+      body.movementDate = edit.date; // untouched date keeps its original time/order
+    }
     try {
       await api.put(`/movements/${edit.id}`, body);
       setEdit(null);
@@ -39,7 +48,7 @@ export default function Ledger() {
     } catch (err) {
       setError(errMsg(err));
     }
-  };
+  });
 
   return (
     <>

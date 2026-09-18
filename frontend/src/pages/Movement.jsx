@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import api, { errMsg, fmt } from '../api';
+import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
+import { useGuard } from '../useGuard';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const blank = () => ({ material: '', type: 'IN', quantity: '', rate: '', movementDate: today(), note: '' });
@@ -9,7 +10,7 @@ export default function Movement() {
   const [f, setF] = useState(blank());
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [run, busy] = useGuard();
 
   useEffect(() => {
     api.get('/materials', { params: { active: true } }).then((r) => setMaterials(r.data)).catch((e) => setError(errMsg(e)));
@@ -17,26 +18,30 @@ export default function Movement() {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const selected = materials.find((m) => m._id === f.material);
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault();
-    setError(''); setResult(null);
-    if (!f.material) return setError('Please select a material');
-    if (!(Number(f.quantity) > 0)) return setError('Quantity must be greater than 0');
-    if (f.type === 'IN' && (f.rate === '' || Number(f.rate) < 0)) return setError('Rate is required for Stock IN');
-
-    setBusy(true);
-    try {
-      const body = { material: f.material, type: f.type, quantity: Number(f.quantity), movementDate: f.movementDate, note: f.note || undefined };
-      if (f.type === 'IN') body.rate = Number(f.rate);
-      const { data } = await api.post('/movements', body);
-      setResult(data);
-      setMaterials((ms) => ms.map((m) => (m._id === data.material._id ? data.material : m)));
-      setF({ ...blank(), material: f.material, type: f.type });
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
+    return run(async () => {
+      setError(''); setResult(null);
+      if (!f.material) return setError('Please select a material');
+      const quantity = parseNum(f.quantity, 0.0001);
+      if (Number.isNaN(quantity)) return setError(`Quantity must be a number greater than 0 and at most ${fmt(MAX_NUM)}`);
+      let rate;
+      if (f.type === 'IN') {
+        rate = parseNum(f.rate, 0);
+        if (Number.isNaN(rate)) return setError(`Rate is required for Stock IN (0 to ${fmt(MAX_NUM)})`);
+      }
+      if (!f.movementDate) return setError('Please pick a date');
+      try {
+        const body = { material: f.material, type: f.type, quantity, movementDate: f.movementDate, note: f.note || undefined };
+        if (f.type === 'IN') body.rate = rate;
+        const { data } = await api.post('/movements', body);
+        setResult(data);
+        setMaterials((ms) => ms.map((m) => (m._id === data.material._id ? data.material : m)));
+        setF({ ...blank(), material: f.material, type: f.type });
+      } catch (err) {
+        setError(errMsg(err));
+      }
+    });
   };
 
   return (

@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import api, { downloadFile, errMsg } from '../api';
+import { useGuard } from '../useGuard';
 
 export default function Reports() {
   const [materials, setMaterials] = useState([]);
   const [f, setF] = useState({ material: '', from: '', to: '' });
   const [msg, setMsg] = useState(null); // { ok, text }
-  const [busy, setBusy] = useState(false);
+  const [run, busy] = useGuard();
 
   useEffect(() => { api.get('/materials').then((r) => setMaterials(r.data)).catch(() => {}); }, []);
 
-  const run = async (path, params) => {
-    setMsg(null); setBusy(true);
+  const download = (path, params) => run(async () => {
+    setMsg(null);
     try {
       const { name, size } = await downloadFile(path, params);
       setMsg({ ok: true, text: `Downloaded ${name} (${size} bytes)` });
@@ -21,10 +22,8 @@ export default function Reports() {
         try { text = JSON.parse(await e.response.data.text()).message || text; } catch { /* keep default */ }
       }
       setMsg({ ok: false, text });
-    } finally {
-      setBusy(false);
     }
-  };
+  });
   const params = Object.fromEntries(Object.entries(f).filter(([, v]) => v));
 
   return (
@@ -33,8 +32,8 @@ export default function Reports() {
       <section className="card">
         <h2>Stock value</h2>
         <div className="row">
-          <button disabled={busy} onClick={() => run('/reports/stock-value/excel')}>Download Stock Value (Excel)</button>
-          <button disabled={busy} onClick={() => run('/reports/stock-value/pdf')}>Download Stock Value (PDF)</button>
+          <button disabled={busy} onClick={() => download('/reports/stock-value/excel')}>Download Stock Value (Excel)</button>
+          <button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}>Download Stock Value (PDF)</button>
         </div>
       </section>
       <section className="card">
@@ -48,7 +47,7 @@ export default function Reports() {
           </label>
           <label>From<input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></label>
           <label>To<input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></label>
-          <button disabled={busy} onClick={() => run('/reports/movements/excel', params)}>Download Movement History (Excel)</button>
+          <button disabled={busy} onClick={() => download('/reports/movements/excel', params)}>Download Movement History (Excel)</button>
         </div>
       </section>
       {msg && <div className={msg.ok ? 'success' : 'error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</div>}

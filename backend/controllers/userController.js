@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isId } = require('../middleware/fields');
 const User = require('../models/User');
 const audit = require('../utils/audit');
 
@@ -13,7 +14,7 @@ exports.list = async (req, res, next) => {
 
 const decide = (status) => async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+    if (!isId(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
     // atomic: only a pending user can transition, so double-approve is rejected race-free
     const user = await User.findOneAndUpdate(
       { _id: req.params.id, status: 'pending' },
@@ -35,9 +36,9 @@ const decide = (status) => async (req, res, next) => {
 exports.setRole = async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ message: 'Invalid user id' });
+    if (!isId(id)) return res.status(400).json({ message: 'Invalid user id' });
     if (!['admin', 'user'].includes(req.body.role)) return res.status(400).json({ message: 'role must be admin or user' });
-    if (String(req.user._id) === id) return res.status(400).json({ message: 'You cannot change your own role' });
+    if (String(req.user._id) === id.toLowerCase()) return res.status(400).json({ message: 'You cannot change your own role' });
     const user = await User.findByIdAndUpdate(id, { role: req.body.role }, { returnDocument: 'after' });
     if (!user) return res.status(404).json({ message: 'User not found' });
     await audit(req, 'USER_ROLE_CHANGE', 'User', user._id, { email: user.email, role: user.role });

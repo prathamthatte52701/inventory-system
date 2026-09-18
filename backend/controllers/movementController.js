@@ -3,6 +3,7 @@ const Material = require('../models/Material');
 const Movement = require('../models/Movement');
 const audit = require('../utils/audit');
 const { apply, recalculate, withLock, ORDER } = require('../utils/costing');
+const { parseNum, isId } = require('../middleware/fields');
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const wrap = (fn) => async (req, res, next) => {
@@ -11,7 +12,7 @@ const wrap = (fn) => async (req, res, next) => {
     next(e);
   }
 };
-const validRate = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0;
+const validRate = (v) => !Number.isNaN(parseNum(v));
 // body may send the paid rate as enteredRate or rate; only ever honoured for IN
 const paidRate = (b) => (b.enteredRate !== undefined ? b.enteredRate : b.rate);
 
@@ -25,7 +26,7 @@ exports.create = wrap(async (req, res) => {
   }
   const movementDate = req.body.movementDate ? new Date(req.body.movementDate) : new Date();
 
-  const out = await withLock(String(materialId), async () => {
+  const out = await withLock(String(materialId).toLowerCase(), async () => { // same key whatever the hex case
     const material = await Material.findById(materialId);
     if (!material || !material.isActive) throw fail(404, 'Material not found or inactive');
 
@@ -62,7 +63,7 @@ exports.create = wrap(async (req, res) => {
 exports.list = wrap(async (req, res) => {
   const filter = {};
   if (req.query.material !== undefined) {
-    if (!mongoose.isValidObjectId(req.query.material)) throw fail(400, 'Invalid material id');
+    if (!isId(req.query.material)) throw fail(400, 'Invalid material id');
     filter.material = req.query.material;
   }
   res.json(await Movement.find(filter).sort(ORDER)
@@ -72,7 +73,7 @@ exports.list = wrap(async (req, res) => {
 
 exports.update = wrap(async (req, res) => {
   const { id } = req.params;
-  if (!mongoose.isValidObjectId(id)) throw fail(400, 'Invalid movement id');
+  if (!isId(id)) throw fail(400, 'Invalid movement id');
   const first = await Movement.findById(id);
   if (!first) throw fail(404, 'Movement not found');
 

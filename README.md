@@ -262,7 +262,9 @@ cd frontend && npm test        # every page, rendered against the real API
 | Reports | `backend/tests/reports.test.js` | Dashboard numbers, xlsx/pdf headers and rows, empty data, bad date ranges |
 | Roles | `backend/tests/roles.test.js` | Promote/demote, self-change block |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
+| **QA (adversarial)** | `backend/tests/qa.test.js` | Spec compliance against the workflow PDF, auth-bypass matrix, role escalation, injection, oversized/NaN/Infinity inputs, malformed ids, 20 simultaneous OUTs, mixed-concurrency chaos, 19-movement history with 5 edits checked against an independent oracle |
 | Frontend | `frontend/tests/phase7.test.jsx`, `phase8.test.jsx` | Login, signup, dashboard, materials, movement form, ledger edit, approvals, downloads, route guards |
+| **Frontend QA** | `frontend/tests/qa.test.jsx` | Empty submits, double-clicks, Back/Forward, corrupt/expired/tampered sessions, direct admin URLs, numeric edge cases, hostile text |
 
 ## Project structure
 
@@ -272,7 +274,7 @@ inventory system/
 │   ├── app.js  server.js
 │   ├── config/db.js                 # Atlas connection (+ DNS fallback)
 │   ├── models/                      # User · Material · Movement · AuditLog
-│   ├── middleware/                  # auth (requireAuth/requireAdmin) · validate
+│   ├── middleware/                  # auth (requireAuth/requireAdmin) · validate · fields (strict validators)
 │   ├── controllers/                 # auth · user · material · movement · report
 │   ├── routes/
 │   ├── utils/                       # costing.js (engine) · jwt · audit · seedAdmins
@@ -282,7 +284,7 @@ inventory system/
 └── frontend/
     ├── src/
     │   ├── api.js                   # axios instance, JWT header, 401 interceptor, file download
-    │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  App.jsx
+    │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  App.jsx  useGuard.js
     │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Users · Reports
     └── tests/
 ```
@@ -293,6 +295,8 @@ inventory system/
 - JWTs are verified on every request, and the user's **current** role and status are read from the database, so a token claiming `admin` grants nothing.
 - Login returns the same message for unknown email and wrong password.
 - All inputs are type-checked before reaching Mongo, which blocks operator-injection payloads such as `{ "$gt": "" }`.
+- Every number must be a finite value between 0 and 1,000,000,000 and every text field has a length cap, so `NaN`, `Infinity`, arrays, objects and 10,000-character strings are rejected with a 400 before they reach the database.
+- JWTs are pinned to HS256; unknown-email logins take as long as wrong-password ones (no timing oracle); responses carry `X-Content-Type-Options: nosniff`.
 - `backend/.env` is git-ignored. Only the blank `.env.example` is committed.
 - **If a real `.env` value was ever pasted into a chat, ticket or screenshot, rotate it.** That means the Atlas password, `JWT_SECRET` and the API keys.
 
@@ -343,7 +347,7 @@ These were **not** specified in the requirements; here is what was chosen and wh
 30. Changing a movement to IN requires a rate. Changing away from IN clears `enteredRate`.
 31. Editing a movement of an inactive material is allowed (admin correction).
 32. An edit that makes stock negative is allowed and flagged `exceededStock`, consistent with live entry.
-33. A negative rate on a PUT for an existing OUT movement returns 400 (unlike POST, where junk rates on OUT are ignored).
+33. On both POST and PUT, a rate is only read when the movement is (or becomes) an IN; on OUT/RETURN it is ignored, never rejected.
 
 ### Reports (Phase 6)
 34. Dashboard, stock-value Excel and PDF cover **active** materials only.
@@ -366,6 +370,36 @@ These were **not** specified in the requirements; here is what was chosen and wh
 49. The test environment uses a bigger async timeout (20 s) because it talks to a real cloud database.
 50. Test-tooling note: `pdf-parse` (2018 pdf.js) randomly rejects valid PDFs made by `pdfkit`. The PDFs were verified independently (correct xref offsets, inflated streams contain the expected text), so tests retry or use a small custom extractor (`backend/tests/pdfText.js`) instead.
 51. Parallel subagents were not used. The pieces were small and heavily shared, so writing them in one pass avoided desync.
+
+### Final QA pass: bugs found and fixed
+A separate adversarial pass (spec check against the PDF, attack patterns, concurrency, chaos data, frontend abuse) found and fixed the following. Each fix has a regression test; the new tests were also run against the pre-fix code to confirm they fail there (20 of 29 backend, 19 of 27 frontend).
+
+| # | Bug | Fix |
+|---|---|---|
+| 52 | `quantity: "1e999"` was accepted and stored as **Infinity**, corrupting the material (`NaN` rate) | Strict numeric validator: finite, 0 to 1e9, numbers or numeric strings only |
+| 53 | Arrays/objects in numeric or enum fields (`quantity:[1,2]`, `type:["IN"]`, `material:[id]`) caused **500 errors** | Type-checked validators return 400 |
+| 54 | No length limits: 20,000-character description, note and name were stored | Caps: id 50, description 200, unit 30, name 100, email 254, note 500 |
+| 55 | Undecodable URL path (`/materials/%zz`) and oversized body (300 kB) returned **500** | 400 and 413 respectively |
+| 56 | A request with no JSON body crashed handlers that read `req.body` (Express 5 leaves it undefined) | Body defaults to `{}` |
+| 57 | An admin could **demote themselves** by sending their own id in upper-case hex (the "own role" check was case-sensitive) | Ids compared case-insensitively |
+| 58 | `mongoose.isValidObjectId` accepts any 12-character string as an id | Strict 24-hex check everywhere |
+| 59 | Per-material lock keyed on the raw string, so the same id in different hex case bypassed it; editing a material's opening values was not locked against movements | Lock key normalised; material update takes the same lock |
+| 60 | JWT verify accepted any HS-family algorithm | Pinned to HS256 |
+| 61 | Unknown-email login returned about 10x faster than wrong-password (account enumeration by timing) | Dummy bcrypt comparison |
+| 62 | Movement dates such as year 275760 were accepted | Dates limited to 1970 to 2100, ISO format only |
+| 63 | Frontend trusted `localStorage`: an edited role showed the admin UI shell, and a garbage or expired token rendered a broken page before redirecting | Session is verified with `GET /auth/me` before any protected page renders; server role always wins |
+| 64 | Double-clicking Signup, Save (materials), Approve, or Ledger Save sent the request twice (second one showed a confusing 409 error) | `useGuard`: one in-flight action at a time |
+| 65 | Logged-in users pressing Back onto `/login` saw the login form | Redirected to the dashboard |
+| 66 | Frontend only checked `quantity > 0`, so `1e15` and `1e999` reached the API | Client limit matches the API (0 to 1e9) |
+| 67 | A user revoked after login kept seeing a half-working app (403s) | "Account not approved" now clears the session |
+
+**Known limitations** (not bugs against the spec, but worth knowing before exposing this publicly):
+- There is **no login rate limiting or lockout**. Put the API behind a reverse proxy or add `express-rate-limit`.
+- `GET /movements` and the exports are not paginated.
+- The JWT lives in `localStorage` (standard for this design, but readable by any XSS; React escapes all output and no HTML is ever injected).
+- `helmet`-style security headers beyond `nosniff` are not set.
+- The concurrency lock is per process; run a single API instance, or move to database transactions.
+- Anyone can sign up (by design); an existing email returns 409, which reveals that the email is registered.
 
 ## Troubleshooting
 

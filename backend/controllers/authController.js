@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { sign } = require('../utils/jwt');
 const audit = require('../utils/audit');
@@ -17,12 +18,15 @@ exports.signup = async (req, res, next) => {
   }
 };
 
+// compared against when the email is unknown, so "no such user" costs the same time as "wrong password"
+const DUMMY_HASH = bcrypt.hashSync('timing-equaliser', 10);
+
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
-    if (!user || !(await user.comparePassword(password)))
-      return res.status(401).json({ message: 'Invalid email or password' });
+    const ok = user ? await user.comparePassword(password) : (await bcrypt.compare(password, DUMMY_HASH), false);
+    if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
     if (user.status === 'pending') return res.status(403).json({ message: 'Account pending admin approval' });
     if (user.status === 'rejected') return res.status(403).json({ message: 'Account rejected' });
     await audit(req, 'LOGIN', 'User', user._id, {}, user);

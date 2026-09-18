@@ -1,22 +1,33 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import api, { errMsg } from '../api';
+import { useAuth } from '../AuthContext';
+import { useGuard } from '../useGuard';
 
 export default function Signup() {
+  const { user, ready } = useAuth();
   const [f, setF] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [run, busy] = useGuard();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
-  const submit = async (e) => {
+  if (!ready) return null;
+  if (user) return <Navigate to="/" replace />;
+
+  const submit = (e) => {
     e.preventDefault();
-    setError('');
-    try {
-      await api.post('/auth/signup', f);
-      setDone(true);
-    } catch (err) {
-      setError(errMsg(err));
-    }
+    return run(async () => {
+      setError('');
+      if (!f.name.trim() || !f.email.trim() || !f.password) return setError('Name, email and password are required');
+      if (f.password.length < 6) return setError('Password must be at least 6 characters');
+      try {
+        await api.post('/auth/signup', { ...f, name: f.name.trim(), email: f.email.trim() });
+        setDone(true);
+      } catch (err) {
+        setError(errMsg(err));
+      }
+    });
   };
 
   if (done)
@@ -35,7 +46,7 @@ export default function Signup() {
       <label>Name<input value={f.name} onChange={set('name')} /></label>
       <label>Email<input type="email" value={f.email} onChange={set('email')} /></label>
       <label>Password<input type="password" value={f.password} onChange={set('password')} /></label>
-      <button className="primary">Sign up</button>
+      <button className="primary" disabled={busy}>Sign up</button>
       <span className="muted">Have an account? <Link to="/login">Log in</Link></span>
     </form>
   );

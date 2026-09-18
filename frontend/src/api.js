@@ -2,21 +2,29 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api' });
 
+export const MAX_NUM = 1e9; // same limit the API enforces for quantities and rates
+export const LOGOUT_EVENT = 'auth:logout';
+
+export const clearSession = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.dispatchEvent(new Event(LOGOUT_EVENT)); // AuthProvider drops the user, ProtectedRoute redirects to /login
+};
+
 api.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('token');
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
 });
 
-// A 401 while holding a session = expired/revoked token. (Wrong password on /login has no session, so it just errors.)
+// A 401 while holding a session = expired/invalid token; 403 "Account not approved" = revoked after login.
+// (Wrong password on /login has no session, so it just errors.)
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401 && localStorage.getItem('token')) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      if (window.location.pathname !== '/login') window.location.assign('/login');
-    }
+    const s = err.response?.status;
+    const revoked = s === 403 && err.response?.data?.message === 'Account not approved';
+    if ((s === 401 || revoked) && localStorage.getItem('token')) clearSession();
     return Promise.reject(err);
   }
 );
@@ -25,6 +33,13 @@ export const errMsg = (e) =>
   e.response?.data?.errors?.map((x) => x.message).join(', ') || e.response?.data?.message || e.message || 'Something went wrong';
 
 export const fmt = (n) => Number(n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+// Client-side twin of the API's numeric rule: a finite number in [min, MAX_NUM]. Returns the number or NaN.
+export function parseNum(v, min = 0) {
+  if (typeof v !== 'string' || v.trim() === '') return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min && n <= MAX_NUM ? n : NaN;
+}
 
 // Fetch a report as a blob and hand it to the browser as a file download.
 export async function downloadFile(path, params) {

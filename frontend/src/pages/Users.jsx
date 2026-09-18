@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errMsg } from '../api';
+import { useGuard } from '../useGuard';
 import { useAuth } from '../AuthContext';
 
 export default function Users() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
+  const [run] = useGuard();
 
   const load = useCallback(() => api.get('/users').then((r) => setUsers(r.data)).catch((e) => setError(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
 
-  const act = async (fn) => {
+  const act = (fn) => run(async () => {
     setError('');
     try { await fn(); await load(); } catch (e) { setError(errMsg(e)); }
-  };
+  });
   const pending = users.filter((u) => u.status === 'pending');
 
   return (

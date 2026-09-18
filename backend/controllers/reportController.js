@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isId } = require('../middleware/fields');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const Material = require('../models/Material');
@@ -95,7 +96,7 @@ exports.movementsExcel = wrap(async (req, res) => {
   const { material } = req.query;
   const filter = {};
   if (material !== undefined && material !== '') {
-    if (!mongoose.isValidObjectId(material)) throw fail('Invalid material id');
+    if (!isId(material)) throw fail('Invalid material id');
     filter.material = material;
   }
   const from = parseDate(req.query.from, 'from'), to = parseDate(req.query.to, 'to', true);

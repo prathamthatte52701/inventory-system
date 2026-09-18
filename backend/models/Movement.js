@@ -11,7 +11,7 @@ const movementSchema = new mongoose.Schema({
   balanceAfter: { type: Number, required: true },
   exceededStock: { type: Boolean, default: false },
   movementDate: { type: Date, default: Date.now },
-  note: String,
+  note: { type: String, maxlength: 500 },
   createdBy: { type: ObjectId, ref: 'User' },
   isEdited: { type: Boolean, default: false },
   lastEditedBy: { type: ObjectId, ref: 'User' },

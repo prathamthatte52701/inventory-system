@@ -4,9 +4,9 @@ const num = { type: Number, min: 0, default: 0 };
 const signedNum = { type: Number, default: 0 }; // stock may go negative (OUT beyond available)
 
 const materialSchema = new mongoose.Schema({
-  materialId: { type: String, required: true, unique: true, uppercase: true, trim: true },
-  description: { type: String, required: true, trim: true },
-  unit: { type: String, required: true, trim: true },
+  materialId: { type: String, required: true, unique: true, uppercase: true, trim: true, maxlength: 50 },
+  description: { type: String, required: true, trim: true, maxlength: 200 },
+  unit: { type: String, required: true, trim: true, maxlength: 30 },
   openingRate: num,
   openingQuantity: num,
   currentRate: num,      // system-maintained
