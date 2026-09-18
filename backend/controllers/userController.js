@@ -32,5 +32,20 @@ const decide = (status) => async (req, res, next) => {
     next(e);
   }
 };
+exports.setRole = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ message: 'Invalid user id' });
+    if (!['admin', 'user'].includes(req.body.role)) return res.status(400).json({ message: 'role must be admin or user' });
+    if (String(req.user._id) === id) return res.status(400).json({ message: 'You cannot change your own role' });
+    const user = await User.findByIdAndUpdate(id, { role: req.body.role }, { returnDocument: 'after' });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    await audit(req, 'USER_ROLE_CHANGE', 'User', user._id, { email: user.email, role: user.role });
+    res.json(user);
+  } catch (e) {
+    next(e);
+  }
+};
+
 exports.approve = decide('approved');
 exports.reject = decide('rejected');

@@ -1,0 +1,379 @@
+<div align="center">
+
+# 📦 Inventory Management System
+
+**Material master · Stock IN / OUT / RETURN · Weighted-average costing · Editable ledger with full auto-recalculation · Live dashboard · Excel & PDF reports**
+
+Node.js · Express 5 · MongoDB Atlas · React 19 · Vite
+
+</div>
+
+---
+
+An automated inventory system for a single location. It records material movements, prices them by **weighted-average cost**, keeps stock levels current, and reports real-time status. An admin can correct any historical entry and the system **replays the whole ledger** so every later balance, rate and amount stays consistent.
+
+> Ground truth for fields, movement logic and status rules: `Inventory_Management_System_Workflow.pdf`.
+
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+  - [1. MongoDB Atlas](#1-mongodb-atlas)
+  - [2. Environment variables](#2-environment-variables)
+  - [3. Install](#3-install)
+  - [4. Seed the admins](#4-seed-the-admins)
+  - [5. Run the backend](#5-run-the-backend)
+  - [6. Run the frontend](#6-run-the-frontend)
+- [Roles & access](#roles--access)
+- [The costing engine](#the-costing-engine)
+- [API reference](#api-reference)
+- [Testing](#testing)
+- [Project structure](#project-structure)
+- [Security notes](#security-notes)
+- [Design decisions](#design-decisions)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Features
+
+| Area | What you get |
+|---|---|
+| **Auth** | Open signup, but an account cannot log in until an admin approves it. JWT sessions. Approval status is re-checked on **every** request, so revoking a user cuts access immediately. |
+| **Material master** | Unique uppercase IDs, unit, opening quantity/rate, minimum quantity. Admin-only create/edit. **Soft delete only**: there is no hard-delete endpoint anywhere. |
+| **Stock movement** | IN / OUT / RETURN by any approved user. OUT past available stock is *never blocked*: it goes through, is flagged `exceededStock`, and returns a warning. |
+| **Costing** | Weighted-average rate on IN. OUT and RETURN use the current average. IN records the amount *actually paid*, not the blended rate. |
+| **Ledger editing** | Admin edits any movement (even the first) and the system replays every movement of that material in order. |
+| **Dashboard** | Total materials, total stock value, low-stock and out-of-stock counts, per-material status. |
+| **Reports** | Stock-value Excel + PDF, movement-history Excel (filter by material and date range). |
+| **Admin tools** | Approve/reject signups, promote/demote users, audit log of every write. |
+
+## How it works
+
+```
+                 ┌────────────────────────── React + Vite (frontend) ──────────────────────────┐
+                 │ Login · Signup · Dashboard · Materials · Stock Movement · Ledger · Reports · Users │
+                 └───────────────────────────────┬──────────────────────────────────────────────┘
+                                                 │ axios  (JWT on every request, 401 ⇒ logout)
+                                                 ▼
+   ┌──────────────────────── Express 5 API (backend) ────────────────────────┐
+   │ requireAuth (token + status==='approved', every request) → requireAdmin │
+   │                                                                          │
+   │  /auth  /users  /materials  /movements  /reports                         │
+   │                          │                                               │
+   │              utils/costing.js  ← single source of truth                  │
+   │        apply()  live entry ─┐        recalculate()  full replay          │
+   │                             └── same rules, so they can never disagree ──┘
+   └───────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+                                MongoDB Atlas
+                       User · Material · Movement · AuditLog
+```
+
+Stock status (from the workflow PDF):
+
+| Condition | Status |
+|---|---|
+| `currentQuantity > minimumQuantity` | **AVAILABLE** |
+| `0 < currentQuantity ≤ minimumQuantity` | **LOW STOCK** |
+| `currentQuantity ≤ 0` | **OUT OF STOCK** |
+
+---
+
+## Quick start
+
+**Prerequisites:** Node.js 20+ (built and tested on Node 24), npm, and a free MongoDB Atlas account.
+
+### 1. MongoDB Atlas
+
+1. Create a free **M0** cluster at <https://cloud.mongodb.com>.
+2. **Database Access → Add New Database User.** Choose password authentication and give it *Read and write to any database*. Save the username and password.
+3. **Network Access → Add IP Address.** Add your current IP (or `0.0.0.0/0` for development only).
+4. **Connect → Drivers** and copy the `mongodb+srv://…` connection string.
+5. Put your database name in the path, before the `?`. Collections are created automatically; the app uses `inventory_management`:
+
+   ```
+   mongodb+srv://<user>:<password>@<cluster>.mongodb.net/inventory_management?appName=<cluster>
+   ```
+
+If your password contains special characters (`@ : / ? #`), URL-encode them.
+
+### 2. Environment variables
+
+There are two files, and they have different jobs:
+
+| File | Committed? | Purpose |
+|---|---|---|
+| `backend/.env` | **No**, git-ignored | Your real secrets. It already exists on the machine this was built on. |
+| `backend/.env.example` | **Yes** | Blank template with the same keys, so a fresh clone knows what to fill in. |
+
+On a new machine:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+then fill in `backend/.env`:
+
+```ini
+MONGO_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/inventory_management?appName=<cluster>
+JWT_SECRET=<long random string>
+ADMIN1_NAME=...
+ADMIN1_EMAIL=...
+ADMIN1_PASSWORD=...
+ADMIN2_NAME=...
+ADMIN2_EMAIL=...
+ADMIN2_PASSWORD=...
+PORT=5000          # optional, default 5000
+```
+
+Generate a strong `JWT_SECRET`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+> `backend/.env` also holds Groq API keys as **commented-out** lines (`# GROQ_API_KEY_1=…`). Nothing reads them yet; uncomment them only when a feature needs them.
+
+### 3. Install
+
+```bash
+cd backend  && npm install
+cd ../frontend && npm install
+```
+
+### 4. Seed the admins
+
+Creates the two pre-approved admin accounts from `ADMIN1_*` / `ADMIN2_*`. Safe to re-run: existing emails are skipped.
+
+```bash
+cd backend
+npm run seed
+```
+
+```
+first@example.com: created
+second@example.com: created        # second run prints "exists, skipped"
+```
+
+### 5. Run the backend
+
+```bash
+cd backend
+npm run dev      # nodemon, auto-restart
+# or
+npm start        # plain node
+```
+
+The API listens on <http://localhost:5000>; health check: `GET /api/health`.
+
+### 6. Run the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open <http://localhost:5173>. Vite proxies `/api` to `localhost:5000`, so no CORS setup is needed in development.
+
+For a production build: `npm run build` (output in `frontend/dist`). To point a built frontend at a different API host, set `VITE_API_URL` at build time (for example `VITE_API_URL=https://api.example.com/api npm run build`).
+
+---
+
+## Roles & access
+
+| Action | Anyone | Approved user | Admin |
+|---|:-:|:-:|:-:|
+| Sign up | ✅ | ✅ | ✅ |
+| Log in | | ✅ (once approved) | ✅ |
+| View dashboard, materials, ledger | | ✅ | ✅ |
+| Record IN / OUT / RETURN | | ✅ | ✅ |
+| Download reports | | ✅ | ✅ |
+| Create / edit / (de)activate materials | | ❌ 403 | ✅ |
+| Edit a ledger movement | | ❌ 403 | ✅ |
+| Approve / reject signups, change roles | | ❌ 403 | ✅ |
+
+The frontend hides admin controls and redirects admin-only URLs, but the **API enforces every rule independently**. The UI is a convenience, not the security boundary.
+
+## The costing engine
+
+All the money logic lives in one function, [`backend/utils/costing.js`](backend/utils/costing.js). Live entry and full replay both call it.
+
+| Type | Quantity | Rate used | Amount | Average rate |
+|---|---|---|---|---|
+| **IN** | `+ qty` | the rate **you enter** | `qty × enteredRate` (what you actually paid) | `(oldQty·oldRate + qty·enteredRate) / (oldQty + qty)` |
+| **OUT** | `− qty` | current average (you don't enter one) | `qty × currentRate` | unchanged |
+| **RETURN** | `+ qty` | current average | `qty × currentRate` | unchanged |
+
+`balanceAfter` is the material's quantity right after that movement.
+
+**Worked example**
+
+| # | Movement | Amount | Balance | Avg rate after |
+|---|---|---:|---:|---:|
+| 1 | IN 100 @ ₹400 | ₹40,000 | 100 | ₹400 |
+| 2 | IN 50 @ ₹440 | **₹22,000** (not 50 × 413.33) | 150 | ₹413.33 |
+| 3 | OUT 30 | ₹12,400 | 120 | ₹413.33 |
+| 4 | RETURN 20 | ₹8,266.67 | 140 | ₹413.33 |
+
+**Editing history.** Change movement #1 from 100 to 200 units and the engine replays from the material's opening baseline: #2 becomes `(200·400 + 50·440)/250 = ₹408`, #3 is priced at ₹408 with balance `220`, and the material ends at `220 @ ₹408`.
+
+**Negative stock is allowed.** An OUT larger than stock succeeds, sets `exceededStock`, and returns a `warning`. The next IN into zero or negative stock restarts the average at the entered rate.
+
+## API reference
+
+All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{ "message": "…" }`, and validation errors also carry `errors: [{ field, message }]`.
+
+| Method | Route | Access | Notes |
+|---|---|---|---|
+| `POST` | `/auth/signup` | public | Creates a **pending** user. `role`/`status` in the body are ignored. |
+| `POST` | `/auth/login` | public | 403 while pending or rejected. |
+| `GET` | `/auth/me` | approved | |
+| `GET` | `/users?status=` | admin | |
+| `PATCH` | `/users/:id/approve` · `/reject` | admin | 409 if already processed. |
+| `PATCH` | `/users/:id/role` | admin | Body `{ role: "admin"\|"user" }`. Cannot change your own role. |
+| `GET` | `/materials?active=true\|false` | approved | |
+| `GET` | `/materials/:id` | approved | |
+| `POST` | `/materials` | admin | 409 on duplicate ID. |
+| `PUT` | `/materials/:id` | admin | 409 if changing opening qty/rate once movements exist. |
+| `PATCH` | `/materials/:id/deactivate` · `/reactivate` | admin | Idempotent. There is **no DELETE**. |
+| `POST` | `/movements` | approved | `{ material, type, quantity, rate?, movementDate?, note? }`. `rate` is required for IN and ignored otherwise. Returns `{ movement, material, warning? }`. |
+| `GET` | `/movements?material=` | approved | Sorted by date, then creation time. |
+| `PUT` | `/movements/:id` | admin | Edits, then replays the material's whole ledger. |
+| `GET` | `/reports/dashboard` | approved | |
+| `GET` | `/reports/stock-value/excel` · `/pdf` | approved | File download. |
+| `GET` | `/reports/movements/excel?material=&from=&to=` | approved | Date-only `to` is inclusive. |
+
+## Testing
+
+Everything runs against real HTTP and a real MongoDB. Tests use **throwaway databases** (`inventory_test`, `inventory_test_ui`) that they drop when finished, so your real data is never touched.
+
+```bash
+cd backend  && npm test        # models, auth, materials, movements, reports, roles, end-to-end
+cd frontend && npm test        # every page, rendered against the real API
+```
+
+| Suite | File | Covers |
+|---|---|---|
+| Models | `backend/tests/phase1.test.js` | Schema validators, virtuals, status thresholds |
+| Auth & Materials | `backend/tests/api.test.js` | Signup/approval flow, JWT tampering, 403s, seed idempotency, material CRUD rules |
+| Movements & Ledger | `backend/tests/movements.test.js` | Costing rules, negative stock, concurrency, back-dated entries, edit + replay |
+| Reports | `backend/tests/reports.test.js` | Dashboard numbers, xlsx/pdf headers and rows, empty data, bad date ranges |
+| Roles | `backend/tests/roles.test.js` | Promote/demote, self-change block |
+| End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
+| Frontend | `frontend/tests/phase7.test.jsx`, `phase8.test.jsx` | Login, signup, dashboard, materials, movement form, ledger edit, approvals, downloads, route guards |
+
+## Project structure
+
+```
+inventory system/
+├── backend/
+│   ├── app.js  server.js
+│   ├── config/db.js                 # Atlas connection (+ DNS fallback)
+│   ├── models/                      # User · Material · Movement · AuditLog
+│   ├── middleware/                  # auth (requireAuth/requireAdmin) · validate
+│   ├── controllers/                 # auth · user · material · movement · report
+│   ├── routes/
+│   ├── utils/                       # costing.js (engine) · jwt · audit · seedAdmins
+│   ├── tests/
+│   ├── .env                         # real secrets, git-ignored
+│   └── .env.example                 # blank template, committed
+└── frontend/
+    ├── src/
+    │   ├── api.js                   # axios instance, JWT header, 401 interceptor, file download
+    │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  App.jsx
+    │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Users · Reports
+    └── tests/
+```
+
+## Security notes
+
+- Passwords are bcrypt-hashed (`passwordHash` is `select: false`) and are never logged. Request bodies are not logged either.
+- JWTs are verified on every request, and the user's **current** role and status are read from the database, so a token claiming `admin` grants nothing.
+- Login returns the same message for unknown email and wrong password.
+- All inputs are type-checked before reaching Mongo, which blocks operator-injection payloads such as `{ "$gt": "" }`.
+- `backend/.env` is git-ignored. Only the blank `.env.example` is committed.
+- **If a real `.env` value was ever pasted into a chat, ticket or screenshot, rotate it.** That means the Atlas password, `JWT_SECRET` and the API keys.
+
+---
+
+## Design decisions
+
+These were **not** specified in the requirements; here is what was chosen and why.
+
+### Foundation & data model (Phase 1)
+1. Emails are stored lowercase and trimmed, so `Bob@X.com` and `bob@x.com` are the same account.
+2. bcrypt cost factor is 10. `description` and `unit` are required on materials.
+3. Every schema has `createdAt`/`updatedAt` timestamps. `AuditLog` has `createdAt` only.
+4. `Material.currentQuantity` is allowed to be **negative** (added in Phase 4; it was `min 0` in Phase 1) because OUT beyond stock is permitted. The other numeric fields keep `min 0`.
+5. The `status` virtual treats any quantity `≤ 0` (including negative) as OUT_OF_STOCK.
+
+### Auth & security (Phase 2)
+6. Signup ignores `role` and `status` from the request body: nobody can self-promote or self-approve.
+7. Login returns 401 for wrong credentials and 403 for pending/rejected. Bad credentials are checked first, so the account's state is not leaked to someone without the password.
+8. JWT lifetime is 8 hours. The role in the token is ignored; the database value is used.
+9. Password must be 6–128 characters.
+10. Approve/reject only works on **pending** users, using an atomic update: a second approve returns 409, an unknown id 404, a malformed id 400.
+11. Audit writes never throw: a failed audit log must not break the request.
+12. `seedAdmins` skips an admin whose email already exists and never overwrites or resets an existing password.
+13. Malformed JSON returns 400 and unknown routes return a JSON 404. Request bodies are capped at 100 kB.
+14. MongoDB SRV DNS lookups sometimes fail on local resolvers, so `config/db.js` falls back to public DNS for that process.
+
+### Material master (Phase 3)
+15. A new material's `currentQuantity`/`currentRate` start equal to its opening values.
+16. Editing opening rate/quantity while **no** movements exist also resets current values to match. Once any movement exists it returns 409, and re-sending an unchanged value is allowed.
+17. `materialId` is immutable after creation, and the system-maintained `current*` and `isActive` fields cannot be set through create/update.
+18. `GET /materials` returns active and inactive items; `?active=` filters. Deactivating an inactive material returns 200.
+19. Duplicate ID returns 409, validation errors 400, non-admin writes 403 ("Admin access required").
+
+### Movements & costing (Phase 4)
+20. For IN, the movement's `rate` is the rate paid (`enteredRate`); for OUT/RETURN it is the current average.
+21. The paid rate may be sent as `rate` or `enteredRate`, and is honoured only for IN. On OUT/RETURN any rate in the body is ignored, not rejected.
+22. An IN into zero or negative stock resets the average to the entered rate, because blending with negative stock produces nonsense.
+23. Rounding: rate 6 decimals, amount 2 decimals, quantity 4 decimals.
+24. Movements are validated for a real material that is **active**; otherwise 404. IN with rate `0` is allowed (free stock).
+25. A per-material in-process lock serialises concurrent requests (ten simultaneous INs are tested). It works for one server process; scale-out would need DB transactions.
+26. A movement and its material update are two writes; if the second fails, the movement is deleted.
+27. A back-dated `movementDate` triggers a replay so later movements stay correct.
+
+### Ledger editing (Phase 5)
+28. Only quantity, type, rate, date and note are editable. Material, amount, balance and creator are derived or fixed.
+29. `isEdited` is set only when a value actually changed. A no-op edit still runs the replay and stays "not edited".
+30. Changing a movement to IN requires a rate. Changing away from IN clears `enteredRate`.
+31. Editing a movement of an inactive material is allowed (admin correction).
+32. An edit that makes stock negative is allowed and flagged `exceededStock`, consistent with live entry.
+33. A negative rate on a PUT for an existing OUT movement returns 400 (unlike POST, where junk rates on OUT are ignored).
+
+### Reports (Phase 6)
+34. Dashboard, stock-value Excel and PDF cover **active** materials only.
+35. Negative-stock materials contribute a **negative** stock value to the total (faithful to `qty × rate`).
+36. Movement export sorts by date, then creation time. A date-only `to` covers that whole day.
+37. `from` after `to`, an unparseable date, or a malformed material id returns 400. Unknown query parameters are ignored. A filter with no matches returns an empty sheet.
+38. Empty data returns empty structures (header-only sheets, "No materials." in the PDF), never an error.
+39. The backend exposes `Content-Disposition` via CORS so a cross-origin frontend can read the download filename.
+
+### Frontend (Phases 7–8)
+40. **Added a backend endpoint** the spec implied but didn't list: `PATCH /users/:id/role`, needed for the role-toggle button. Admins cannot change their own role, which prevents locking yourself out.
+41. Route guard: only `/users` is admin-only. Materials, Ledger and Reports are visible to everyone, with admin controls hidden for normal users.
+42. Login and signup forms use custom validation (`noValidate`) so error messages are consistent and testable.
+43. The 401 interceptor only clears the session and redirects when a session exists; a wrong password on the login page shows an inline error instead.
+44. The movement page lists **active** materials only, hides the rate field for OUT/RETURN, and blocks empty material, non-positive quantity and missing IN rate before any request is sent.
+45. The Ledger sends `movementDate` only if the user changed the date field, so untouched rows keep their original time and ordering. After every save the whole table is re-fetched, because an edit changes later rows.
+46. The Users page shows pending signups plus all users; the role button is disabled on your own row.
+47. Currency is displayed as ₹ with Indian digit grouping (`en-IN`).
+48. Report downloads use blob responses, and API error messages are unwrapped from the blob so the user sees the real reason.
+49. The test environment uses a bigger async timeout (20 s) because it talks to a real cloud database.
+50. Test-tooling note: `pdf-parse` (2018 pdf.js) randomly rejects valid PDFs made by `pdfkit`. The PDFs were verified independently (correct xref offsets, inflated streams contain the expected text), so tests retry or use a small custom extractor (`backend/tests/pdfText.js`) instead.
+51. Parallel subagents were not used. The pieces were small and heavily shared, so writing them in one pass avoided desync.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `querySrv ECONNREFUSED …mongodb.net` | Your resolver blocks SRV records. The app already falls back to public DNS; if it persists, switch your network DNS to `8.8.8.8`, or use the non-SRV connection string from Atlas. |
+| `MongooseServerSelectionError` / timeout | Your IP is not in Atlas **Network Access**. |
+| `bad auth` / authentication failed | Wrong DB user/password in `MONGO_URI`; URL-encode special characters. |
+| Frontend shows "Network Error" | Backend is not running on port 5000 (or `PORT` differs from the proxy target in `frontend/vite.config.js`). |
+| Login says "Account pending admin approval" | An admin must approve the signup on the **Users** page (or use a seeded admin). |
+| Seed says `exists, skipped` | Expected on re-runs; existing accounts are never modified. |

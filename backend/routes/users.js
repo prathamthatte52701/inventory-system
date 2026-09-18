@@ -6,5 +6,6 @@ router.use(requireAuth, requireAdmin);
 router.get('/', c.list);
 router.patch('/:id/approve', c.approve);
 router.patch('/:id/reject', c.reject);
+router.patch('/:id/role', c.setRole);
 
 module.exports = router;

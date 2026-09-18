@@ -3,7 +3,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 
 const app = express();
-app.use(cors());
+app.use(cors({ exposedHeaders: ['Content-Disposition'] })); // lets a cross-origin frontend read the download filename
 app.use(express.json({ limit: '100kb' }));
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev')); // morgan never logs bodies
 
