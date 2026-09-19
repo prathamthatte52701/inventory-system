@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import api, { errMsg, fmt, parseNum, MAX_NUM } from '../../api';
-import { useGuard } from '../../useGuard';
+import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
+import { useGuard } from '../useGuard';
 
 const LABEL = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
 const EMPTY = { materialId: '', description: '', unit: '', openingRate: '0', openingQuantity: '0', minimumQuantity: '0' };

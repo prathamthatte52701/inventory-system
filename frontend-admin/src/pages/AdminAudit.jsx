@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import api, { errMsg } from '../../api';
+import api, { errMsg } from '../api';
 
 const ENTITIES = ['Material', 'Movement', 'User'];
 const ACTIONS = ['LOGIN', 'LOGOUT', 'SIGNUP', 'MATERIAL_CREATE', 'MATERIAL_UPDATE', 'MOVEMENT_CREATE', 'MOVEMENT_EDIT', 'USER_APPROVE', 'USER_REJECT', 'USER_ROLE_CHANGE'];

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import api, { errMsg } from '../../api';
+import api, { errMsg } from '../api';
 
 const LINKS = [
-  ['/admin/materials', 'Materials', 'Add, edit, deactivate'],
-  ['/admin/ledger', 'Movement Corrections', 'Fix a ledger entry'],
-  ['/admin/users', 'Users', 'Approvals and roles'],
-  ['/admin/audit', 'Audit Log', 'Who did what'],
-  ['/admin/analytics', 'Analytics', 'Volume and top materials'],
+  ['/materials', 'Materials', 'Add, edit, deactivate'],
+  ['/ledger', 'Movement Corrections', 'Fix a ledger entry'],
+  ['/users', 'Users', 'Approvals and roles'],
+  ['/audit', 'Audit Log', 'Who did what'],
+  ['/analytics', 'Analytics', 'Volume and top materials'],
 ];
 
 export default function AdminDashboard() {
@@ -26,7 +26,7 @@ export default function AdminDashboard() {
     <>
       <h1>Admin Overview</h1>
       <div className="stats">
-        <Link to="/admin/users" className="card stat" aria-label="Pending signups"><b data-testid="pending-count">{d.pending}</b><span>Pending signups — review</span></Link>
+        <Link to="/users" className="card stat" aria-label="Pending signups"><b data-testid="pending-count">{d.pending}</b><span>Pending signups — review</span></Link>
         <div className="card stat"><b data-testid="low-count">{d.low}</b><span>Low stock</span></div>
         <div className="card stat"><b data-testid="out-count">{d.out}</b><span>Out of stock</span></div>
       </div>
@@ -39,7 +39,7 @@ export default function AdminDashboard() {
             {!d.recent.length && <tr><td colSpan="4" className="muted">No activity yet.</td></tr>}
           </tbody>
         </table>
-        <p><Link to="/admin/audit">Full audit log →</Link></p>
+        <p><Link to="/audit">Full audit log →</Link></p>
       </section>
       <section>
         <h2>Quick links</h2>

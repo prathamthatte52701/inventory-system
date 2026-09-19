@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import api, { errMsg } from '../../api';
-import { useGuard } from '../../useGuard';
-import { useAuth } from '../../AuthContext';
+import api, { errMsg } from '../api';
+import { useGuard } from '../useGuard';
+import { useAuth } from '../AuthContext';
 
 export default function AdminUsers() {
   const { user: me } = useAuth();

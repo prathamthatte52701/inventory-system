@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import api, { errMsg, fmt } from '../../api';
+import api, { errMsg, fmt } from '../api';
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 const TYPES = ['IN', 'OUT', 'RETURN'];

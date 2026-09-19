@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
-const ITEMS = [['/admin', 'Overview', true], ['/admin/materials', 'Materials'], ['/admin/ledger', 'Movement Corrections'], ['/admin/users', 'Users'], ['/admin/audit', 'Audit Log'], ['/admin/analytics', 'Analytics']];
+const ITEMS = [['/', 'Overview', true], ['/materials', 'Materials'], ['/ledger', 'Movement Corrections'], ['/users', 'Users'], ['/audit', 'Audit Log'], ['/analytics', 'Analytics']];
+const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:5173'; // the normal user app
 
-// Own shell for everything admin-only; rendered only inside <ProtectedRoute adminOnly>.
-export default function AdminLayout() {
+// The one shell for this app; rendered only inside <RequireAdmin>.
+export default function Layout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   return (
@@ -13,9 +14,9 @@ export default function AdminLayout() {
         <strong className="brand">Admin Console</strong>
         {ITEMS.map(([to, name, end]) => <NavLink key={to} to={to} end={end}>{name}</NavLink>)}
         <span className="spacer" />
-        <NavLink to="/">← Back to app</NavLink>
+        <a href={APP_URL}>← Back to app</a>
         <span className="who">{user.name}</span>
-        <button onClick={() => { logout(); nav('/login'); }}>Logout</button>
+        <button onClick={async () => { await logout(); nav('/login'); }}>Logout</button>
       </nav>
       <main className="page"><Outlet /></main>
     </div>

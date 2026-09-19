@@ -141,6 +141,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```bash
 cd backend  && npm install
 cd ../frontend && npm install
+cd ../frontend-admin && npm install
 ```
 
 ### 4. Seed the admins
@@ -168,16 +169,36 @@ npm start        # plain node
 
 The API listens on <http://localhost:5000>; health check: `GET /api/health`.
 
-### 6. Run the frontend
+### 6. Run the two frontends
+
+There are **two separate React apps**, each with its own package, build and dev server:
+
+| App | Folder | Dev URL | Who uses it |
+|---|---|---|---|
+| User app | `frontend/` | <http://localhost:5173> | everyone (dashboard, materials, movements, read-only ledger, reports) |
+| Admin console | `frontend-admin/` | <http://localhost:5174> | admins only (materials, movement corrections, users, audit log, analytics) |
+
+Run all three servers, one per terminal:
 
 ```bash
-cd frontend
-npm run dev
+cd backend && npm run dev            # terminal 1: API on :5000
+cd frontend && npm run dev           # terminal 2: user app on :5173
+cd frontend-admin && npm run dev     # terminal 3: admin console on :5174
 ```
 
-Open <http://localhost:5173>. Vite proxies `/api` to `localhost:5000`, so no CORS setup is needed in development.
+Both Vite servers proxy `/api` to `localhost:5000`, so nothing needs CORS in development. The admin console has its own login and refuses non-admins ("This app is for admins only"). The **Admin** link in the user app's navbar (admins only) opens it in a new tab.
 
-For a production build: `npm run build` (output in `frontend/dist`). To point a built frontend at a different API host, set `VITE_API_URL` at build time (for example `VITE_API_URL=https://api.example.com/api npm run build`).
+Addresses between the apps are configurable (see `frontend/.env.example` and `frontend-admin/.env.example`): `VITE_ADMIN_URL` (user app, default `http://localhost:5174`) and `VITE_APP_URL` (admin app's "Back to app" link, default `http://localhost:5173`).
+
+**CORS.** The backend's `CORS_ORIGIN` is a comma-separated list, so both apps can be allowed at once. Only needed when an app talks to the API directly instead of through the Vite proxy:
+
+```ini
+CORS_ORIGIN=http://localhost:5173,http://localhost:5174
+```
+
+The session cookie is scoped to the host, not the port, so signing in to one app signs you in to the other (for admins) and signing out of one signs out of both.
+
+For a production build: `npm run build` in either app (output in `frontend/dist` or `frontend-admin/dist`). To point a built frontend at a different API host, set `VITE_API_URL` at build time (for example `VITE_API_URL=https://api.example.com/api npm run build`).
 
 ---
 
@@ -281,11 +302,18 @@ inventory system/
 │   ├── tests/
 │   ├── .env                         # real secrets, git-ignored
 │   └── .env.example                 # blank template, committed
-└── frontend/
+├── frontend/                        # user app (port 5173)
+│   ├── src/
+│   │   ├── api.js                   # axios instance (cookie session), 401 interceptor, file download
+│   │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  MainLayout.jsx  App.jsx  useGuard.js
+│   │   ├── components/LedgerTable.jsx   # read-only ledger
+│   │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Reports
+│   └── tests/
+└── frontend-admin/                  # admin console, separate app (port 5174)
     ├── src/
-    │   ├── api.js                   # axios instance, JWT header, 401 interceptor, file download
-    │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  App.jsx  useGuard.js
-    │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Users · Reports
+    │   ├── api.js  AuthContext.jsx  RequireAdmin.jsx  Layout.jsx  App.jsx  useGuard.js
+    │   ├── components/LedgerTable.jsx   # editable ledger (movement corrections)
+    │   └── pages/                   # Login · AdminDashboard · AdminMaterials · AdminLedger · AdminUsers · AdminAudit · AdminAnalytics
     └── tests/
 ```
 

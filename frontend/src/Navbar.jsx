@@ -1,6 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
+// The admin console is a separate app; its address is configurable (see frontend/.env.example).
+const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || 'http://localhost:5174';
+
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
   const nav = useNavigate();
@@ -13,10 +16,10 @@ export default function Navbar() {
       <NavLink to="/movement">Stock Movement</NavLink>
       <NavLink to="/ledger">Ledger</NavLink>
       <NavLink to="/reports">Reports</NavLink>
-      {isAdmin && <NavLink to="/admin">Admin</NavLink>}
+      {isAdmin && <a href={ADMIN_URL} target="_blank" rel="noopener noreferrer">Admin</a>}
       <span className="spacer" />
       <span className="who">{user.name}{isAdmin ? ' (admin)' : ''}</span>
-      <button onClick={() => { logout(); nav('/login'); }}>Logout</button>
+      <button onClick={async () => { await logout(); nav('/login'); }}>Logout</button>
     </nav>
   );
 }

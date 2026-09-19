@@ -33,5 +33,7 @@ td.num, th.num { text-align: right; }
 .muted { color: #6b7280; }
 .actions { display: flex; gap: 6px; }
 section { margin-bottom: 24px; }
+.admin-nav { background: #4c1d95; }
+.admin-nav a.active { border-bottom-color: #fbbf24; }
 a.card.stat { text-decoration: none; color: inherit; }
 a.card.stat:hover { box-shadow: 0 0 0 2px #a78bfa; }
