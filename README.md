@@ -196,6 +196,8 @@ Addresses between the apps are configurable (see `frontend/.env.example` and `fr
 CORS_ORIGIN=http://localhost:5173,http://localhost:5174
 ```
 
+**UI.** Both apps use Tailwind CSS v4 and a small shadcn/ui-style component kit (`src/components/ui/`: Button, Field/Input/Select, Badge, Alert, Table, Card, page helpers), duplicated in each app rather than shared. They differ in register so you always know where you are: the user app has a light top navbar with a **blue** accent; the admin console has a dark sidebar with a **violet** accent.
+
 The session cookie is scoped to the host, not the port, so signing in to one app signs you in to the other (for admins) and signing out of one signs out of both.
 
 For a production build: `npm run build` in either app (output in `frontend/dist` or `frontend-admin/dist`). To point a built frontend at a different API host, set `VITE_API_URL` at build time (for example `VITE_API_URL=https://api.example.com/api npm run build`).
@@ -307,6 +309,7 @@ inventory system/
 │   │   ├── api.js                   # axios instance (cookie session), 401 interceptor, file download
 │   │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  MainLayout.jsx  App.jsx  useGuard.js
 │   │   ├── components/LedgerTable.jsx   # read-only ledger
+│   │   ├── components/ui/           # shadcn-style kit (button, field, badge, alert, table, card, page)
 │   │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Reports
 │   └── tests/
 └── frontend-admin/                  # admin console, separate app (port 5174)
