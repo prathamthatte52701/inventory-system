@@ -1,3 +1,4 @@
+// Admin-route tests removed — admin is a separate app now (frontend-admin/). See README "Testing" section for the pending admin test coverage.
 // Phase 7: login, signup, dashboard, materials, movement entry — real backend, real HTTP.
 import { describe, it, expect } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -45,32 +46,6 @@ describe('Phase 7 brutal', () => {
     expect(screen.getByTestId('out-count')).toHaveTextContent(String(before.outOfStockCount));
     expect(screen.getByTestId('total-value').textContent).toContain(Number(before.totalStockValue).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
     expect(m.status).toBe('AVAILABLE');
-  });
-
-  it('admin materials page (/admin/materials): can add, edit, deactivate via UI', async () => {
-    await session(ADMIN);
-    const id = uid('MAT');
-    renderApp('/admin/materials');
-    await userEvent.click(await screen.findByRole('button', { name: 'Add Material' }));
-    await type('Material ID', id.toLowerCase());
-    await type('Description', 'UI Sand');
-    await type('Unit', 'Kg');
-    await type('Opening Rate', '10');
-    await type('Opening Quantity', '5');
-    await type('Minimum Quantity', '20');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    const row = (await screen.findByText(id)).closest('tr'); // uppercased by backend
-    expect(within(row).getByText('Low Stock')).toBeInTheDocument();
-
-    await userEvent.click(within(row).getByRole('button', { name: `Edit ${id}` }));
-    await type('Description', 'UI Sand Fine');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('UI Sand Fine')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: `Deactivate ${id}` }));
-    expect(await screen.findByText(`${id} (inactive)`)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: `Reactivate ${id}` }));
-    await waitFor(() => expect(screen.queryByText(`${id} (inactive)`)).not.toBeInTheDocument());
   });
 
   it('materials page: normal user sees a read-only list', async () => {

@@ -8,8 +8,9 @@ import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 export default function Materials() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => api.get('/materials').then((r) => setItems(r.data)).catch((e) => setError(errMsg(e))), []);
+  const load = useCallback(() => api.get('/materials').then((r) => { setItems(r.data); setLoaded(true); }).catch((e) => setError(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
 
   return (
@@ -32,7 +33,7 @@ export default function Materials() {
                 <Td><StatusBadge status={m.status} /></Td>
               </Tr>
             ))}
-            {!items.length && <EmptyRow cols={7}>No materials yet.</EmptyRow>}
+            {!items.length && loaded && <EmptyRow cols={7}>No materials yet.</EmptyRow>}
           </tbody>
         </Table>
       </TableWrap>

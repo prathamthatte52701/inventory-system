@@ -30,14 +30,3 @@ export function StatusBadge({ status }) {
   const [tone, label] = STOCK[status] || ['slate', status];
   return <Badge tone={tone} dot>{label}</Badge>;
 }
-
-// audit-log action -> colour family
-export function actionTone(action = '') {
-  if (/REJECT/.test(action)) return 'red';
-  if (/ROLE/.test(action)) return 'primary';
-  if (/CREATE|APPROVE/.test(action)) return 'green';
-  if (/UPDATE|EDIT/.test(action)) return 'amber';
-  if (/SIGNUP/.test(action)) return 'blue';
-  return 'slate'; // LOGIN / LOGOUT / anything else
-}
-export const ActionBadge = ({ action }) => <Badge tone={actionTone(action)}>{action}</Badge>;

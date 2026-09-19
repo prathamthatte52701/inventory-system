@@ -1,9 +1,10 @@
+// Admin-route tests removed — admin is a separate app now (frontend-admin/). See README "Testing" section for the pending admin test coverage.
 // Round 4: adversarial frontend pass (empty submits, double clicks, Back button, session abuse, direct URLs, numbers, XSS).
 import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import api from '../src/api';
-import { ADMIN, loginApi, adminApi, makeUser, session, renderApp, uid, as, backendRequire } from './helpers';
+import { ADMIN, loginApi, adminApi, makeUser, session, renderApp, uid, as } from './helpers';
 
 const type = async (label, text) => { const el = await screen.findByLabelText(label); await userEvent.clear(el); await userEvent.type(el, text); };
 const calls = (spy, url) => spy.mock.calls.filter((c) => c[0] === url).length;
@@ -54,25 +55,6 @@ describe('Round 4 · empty required fields', () => {
     expect(calls(spy, '/auth/signup')).toBe(0);
   });
 
-  it('material form: empty and invalid fields are blocked; nothing created', async () => {
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'post');
-    renderApp('/admin/materials');
-    await userEvent.click(await screen.findByRole('button', { name: 'Add Material' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Material ID is required');
-    await type('Material ID', uid('EM'));
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/description and unit/i);
-    await type('Description', 'd'); await type('Unit', 'u'); await type('Opening Quantity', '-3');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/openingQuantity must be a number/);
-    await type('Opening Quantity', '1e15');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/openingQuantity must be a number/);
-    expect(calls(spy, '/materials')).toBe(0);
-  });
-
   it('movement form: empty quantity / missing IN rate blocked', async () => {
     const m = await newMat('EMV');
     await session(await makeUser());
@@ -87,25 +69,7 @@ describe('Round 4 · empty required fields', () => {
     expect(calls(spy, '/movements')).toBe(0);
   });
 
-  it('ledger edit: empty quantity / empty rate blocked, nothing sent', async () => {
-    const { _id, api: a } = await newMat('ELG');
-    const mv = (await a.post('/movements', { material: _id, type: 'IN', quantity: 10, rate: 5 })).data.movement;
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'put');
-    renderApp('/admin/ledger');
-    const row = await screen.findByTestId(`row-${mv._id}`);
-    await userEvent.click(within(row).getByRole('button', { name: /^Edit movement/ }));
-    await userEvent.clear(within(row).getByLabelText('Quantity'));
-    await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/quantity must be a number/i);
-    await type2(within(row).getByLabelText('Quantity'), '10');
-    await userEvent.clear(within(row).getByLabelText('Rate'));
-    await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/rate is required/i);
-    expect(calls(spy, `/movements/${mv._id}`)).toBe(0);
-  });
 });
-const type2 = async (el, text) => { await userEvent.clear(el); await userEvent.type(el, text); };
 
 describe('Round 4 · rapid double-click (exactly one request, no phantom error)', () => {
   it('login', async () => {
@@ -127,20 +91,6 @@ describe('Round 4 · rapid double-click (exactly one request, no phantom error)'
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('material create: one row, no duplicate-ID error', async () => {
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'post');
-    renderApp('/admin/materials');
-    const id = uid('DBL');
-    await userEvent.click(await screen.findByRole('button', { name: 'Add Material' }));
-    await type('Material ID', id); await type('Description', 'Dbl'); await type('Unit', 'u');
-    await userEvent.dblClick(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText(id)).toBeInTheDocument();
-    expect(calls(spy, '/materials')).toBe(1);
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getAllByText(id)).toHaveLength(1);
-  });
-
   it('movement: one movement recorded, balance not doubled', async () => {
     const m = await newMat('DBM');
     await session(await makeUser());
@@ -154,32 +104,6 @@ describe('Round 4 · rapid double-click (exactly one request, no phantom error)'
     expect((await m.api.get('/movements', { params: { material: m._id } })).data.data).toHaveLength(1);
   });
 
-  it('ledger save: one PUT', async () => {
-    const { _id, api: a } = await newMat('DBL2');
-    const mv = (await a.post('/movements', { material: _id, type: 'IN', quantity: 10, rate: 5 })).data.movement;
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'put');
-    renderApp('/admin/ledger');
-    const row = await screen.findByTestId(`row-${mv._id}`);
-    await userEvent.click(within(row).getByRole('button', { name: /^Edit movement/ }));
-    await type2(within(row).getByLabelText('Quantity'), '20');
-    await userEvent.dblClick(within(row).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(within(screen.getByTestId(`row-${mv._id}`)).getByText('₹100')).toBeInTheDocument());
-    expect(calls(spy, `/movements/${mv._id}`)).toBe(1);
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('users approve: one PATCH, no "already processed" error', async () => {
-    const email = `${uid('ap').toLowerCase()}@test.com`;
-    await as().post('/auth/signup', { name: 'Ap', email, password: 'secret1' });
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'patch');
-    renderApp('/admin/users');
-    await userEvent.dblClick(await screen.findByRole('button', { name: `Approve ${email}` }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: `Approve ${email}` })).toBeNull());
-    expect(spy.mock.calls.filter((c) => c[0].endsWith('/approve')).length).toBe(1);
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
 });
 
 describe('Round 4 · Back / Forward button', () => {
@@ -246,42 +170,15 @@ describe('Round 4 · session abuse', () => {
     w.stop();
   });
 
-  it('edited role in localStorage does not unlock admin UI (server role wins) and never flashes it', async () => {
-    const u = await session(await makeUser('Sneaky Sam'));
-    localStorage.setItem('user', JSON.stringify({ ...u.user, role: 'admin' }));
-    const w = watchFor('Admin Console');
-    renderApp('/admin/users');
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(w.seen.hit).toBe(false);
-    const nav = screen.getByRole('navigation');
-    expect(within(nav).queryByRole('link', { name: 'Users' })).toBeNull();
-    expect(within(nav).queryByText(/admin/)).toBeNull();
-    w.stop();
-  });
 });
 
 describe('Round 4 · direct URL access', () => {
-  it('normal user typing /users or any /admin/* URL: redirected, admin content never appears', async () => {
-    await session(await makeUser());
-    for (const url of ['/users', '/admin/users', '/admin', '/admin/', '/admin/materials', '/admin/ledger', '/admin/audit', '/admin/analytics', '/admin/nope', '/users/', '/USERS']) {
-      const w = watchFor('Admin Console');
-      const { unmount } = renderApp(url);
-      expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-      expect(w.seen.hit, url).toBe(false);
-      w.stop(); unmount();
-    }
-  });
-  it('logged-out visitor typing admin URLs goes to login', async () => {
-    for (const url of ['/users', '/admin', '/admin/users', '/admin/audit', '/admin/analytics', '/materials', '/ledger', '/reports', '/movement']) {
+  it('logged-out visitor typing protected URLs goes to login', async () => {
+    for (const url of ['/materials', '/ledger', '/reports', '/movement']) {
       const { unmount } = renderApp(url);
       expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
       unmount();
     }
-  });
-  it('admin can reach /admin/users directly', async () => {
-    await session(ADMIN);
-    renderApp('/admin/users');
-    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument();
   });
 });
 
@@ -341,31 +238,16 @@ describe('Round 4 · numbers: client and API agree', () => {
     expect((await m.api.get(`/materials/${m._id}`)).data.currentRate).toBe(12.345);
   });
 
-  it('ledger edit: 1e15 / negative quantity blocked client-side', async () => {
-    const { _id, api: a } = await newMat('LNM');
-    const mv = (await a.post('/movements', { material: _id, type: 'IN', quantity: 10, rate: 5 })).data.movement;
-    await session(ADMIN);
-    const spy = vi.spyOn(api, 'put');
-    renderApp('/admin/ledger');
-    const row = await screen.findByTestId(`row-${mv._id}`);
-    await userEvent.click(within(row).getByRole('button', { name: /^Edit movement/ }));
-    for (const bad of ['1e15', '-2', '0']) {
-      await type2(within(row).getByLabelText('Quantity'), bad);
-      await userEvent.click(within(row).getByRole('button', { name: 'Save' }));
-      expect(await screen.findByRole('alert'), bad).toHaveTextContent(/quantity must be a number/i);
-    }
-    expect(calls(spy, `/movements/${mv._id}`)).toBe(0);
-  });
 });
 
 describe('Round 4 · hostile text renders as inert text', () => {
-  it('HTML in descriptions/notes is shown literally on dashboard, materials, ledger and their admin twins (no elements, no script)', async () => {
+  it('HTML in descriptions/notes is shown literally on dashboard, materials, ledger (no elements, no script)', async () => {
     const payload = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>';
     const m = await newMat('XSS');
     await m.api.put(`/materials/${m._id}`, { description: payload });
     await m.api.post('/movements', { material: m._id, type: 'IN', quantity: 1, rate: 1, note: payload });
     await session(ADMIN);
-    for (const route of ['/', '/materials', '/ledger', '/admin/materials', '/admin/ledger']) {
+    for (const route of ['/', '/materials', '/ledger']) {
       const { unmount, container } = renderApp(route);
       await screen.findAllByText((t) => t.includes('<img src=x'));
       expect(container.querySelector('img[src="x"]')).toBeNull();

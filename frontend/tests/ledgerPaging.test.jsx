@@ -1,3 +1,4 @@
+// Admin-route tests removed — admin is a separate app now (frontend-admin/). See README "Testing" section for the pending admin test coverage.
 // Ledger pagination: every movement past the backend's 200-row page cap must stay reachable.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,27 +45,6 @@ describe('Ledger pagination', () => {
     await backendRequire('./models/Material').deleteMany({ _id: { $in: [...ids, D] } });
   }, 60000);
   beforeEach(() => session(ADMIN)); // afterEach logs the jsdom cookie jar out
-
-  it('admin ledger: reaches #201, #225, #250 via Next; edit on page 2 reloads same page with fresh balances', async () => {
-    renderApp('/admin/ledger'); // corrections live here; the public /ledger is view-only
-    await pick(A.matId);
-    await row(A.moves[0]);
-    expect(info()).toBe('Page 1 of 2 (250 total)');
-    expect(screen.queryByTestId(`row-${A.moves[200]._id}`)).toBeNull();
-    await next();
-    for (const k of [201, 225, 250]) expect(await row(A.moves[k - 1])).toBeInTheDocument();
-    expect(info()).toBe('Page 2 of 2 (250 total)');
-    expect(screen.queryByTestId(`row-${A.moves[0]._id}`)).toBeNull();
-
-    // edit #201 qty 1 -> 5: balances after it grow by 4 (#250: 250 -> 254); stay on page 2
-    const r = await row(A.moves[200]);
-    await userEvent.click(r.querySelector('button[aria-label^="Edit movement"]'));
-    const q = screen.getByLabelText('Quantity');
-    await userEvent.clear(q); await userEvent.type(q, '5');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect((screen.getByTestId(`row-${A.moves[249]._id}`)).textContent).toContain('254'));
-    expect(info()).toBe('Page 2 of 2 (250 total)');
-  }, 60000);
 
   it('public ledger pages through all 250 rows too and never shows edit controls, even to an admin', async () => {
     renderApp('/ledger');

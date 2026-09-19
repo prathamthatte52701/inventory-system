@@ -14,13 +14,6 @@ export function PageHeader({ title, description, children }) {
   );
 }
 
-export const Section = ({ title, className, children }) => (
-  <section className={cn('mt-8', className)}>
-    {title && <h2 className="mb-3 text-base font-semibold text-slate-900">{title}</h2>}
-    {children}
-  </section>
-);
-
 export const Loading = () => <p className="py-10 text-center text-sm text-slate-500">Loading…</p>;
 
 // Value first in the DOM (as before), label shown above it. `to` makes the whole card a link.

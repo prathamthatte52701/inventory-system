@@ -1,8 +1,9 @@
+// Admin-route tests removed — admin is a separate app now (frontend-admin/). See README "Testing" section for the pending admin test coverage.
 // Phase 8: ledger (admin edit + recalculation), user approvals, reports downloads, navbar / route guards.
 import { describe, it, expect } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ADMIN, adminApi, makeUser, session, renderApp, uid, as, captureDownloads, blobBuffer, backendRequire } from './helpers';
+import { ADMIN, adminApi, makeUser, session, renderApp, uid, captureDownloads, blobBuffer, backendRequire } from './helpers';
 
 const type = async (el, text) => { await userEvent.clear(el); await userEvent.type(el, text); };
 const ExcelJS = backendRequire('exceljs');
@@ -45,36 +46,6 @@ describe('Phase 8 brutal', () => {
     expect(r.getByText('₹12,400')).toBeInTheDocument(); // 30 x avg 413.33
   });
 
-  it('admin ledger (/admin/ledger): admin edits FIRST movement qty 100->200; whole table recalculates', async () => {
-    const api = await adminApi();
-    const L = await seedLedger(api, 'ED');
-    await session(ADMIN);
-    renderApp('/admin/ledger');
-    await pickMaterial(L.matId);
-    await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
-
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: /^Edit movement/ }));
-    await type(within(rowOf(L.moves[0])).getByLabelText('Quantity'), '200');
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: 'Save' }));
-
-    // row 1: qty 200, rate 400, amount 80,000, balance 200
-    await waitFor(() => expect(within(rowOf(L.moves[0])).getByText('₹80,000')).toBeInTheDocument());
-    const r1 = within(rowOf(L.moves[0]));
-    expect(r1.getAllByText('200')).toHaveLength(2); // qty and balance
-    expect(r1.getByTitle('edited')).toBeInTheDocument();
-    // row 2 unchanged money, balance now 250; row 3 OUT at NEW avg 408, balance 220
-    const r2 = within(rowOf(L.moves[1]));
-    expect(r2.getByText('₹22,000')).toBeInTheDocument();
-    expect(r2.getByText('250')).toBeInTheDocument();
-    const r3 = within(rowOf(L.moves[2]));
-    expect(r3.getByText('₹408')).toBeInTheDocument();
-    expect(r3.getByText('₹12,240')).toBeInTheDocument();
-    expect(r3.getByText('220')).toBeInTheDocument();
-
-    const m = (await api.get(`/materials/${L.matId}`)).data;
-    expect([m.currentQuantity, m.currentRate]).toEqual([220, 408]);
-  });
-
   it('ledger: normal user sees the table but no edit controls', async () => {
     const api = await adminApi();
     const L = await seedLedger(api, 'NU');
@@ -94,36 +65,6 @@ describe('Phase 8 brutal', () => {
     await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
     expect(screen.queryByRole('button', { name: /^Edit movement/ })).toBeNull();
     expect(screen.queryByText('Actions')).toBeNull();
-  });
-
-  it('admin users: approve + reject pending signups; role toggle; self toggle disabled', async () => {
-    const api = await adminApi();
-    const ok = { email: `${uid('a').toLowerCase()}@test.com`, name: 'To Approve' };
-    const no = { email: `${uid('r').toLowerCase()}@test.com`, name: 'To Reject' };
-    await as().post('/auth/signup', { ...ok, password: 'secret1' });
-    await as().post('/auth/signup', { ...no, password: 'secret1' });
-    const me = await session(ADMIN);
-    renderApp('/admin/users');
-
-    await userEvent.click(await screen.findByRole('button', { name: `Approve ${ok.email}` }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: `Approve ${ok.email}` })).toBeNull());
-    await userEvent.click(screen.getByRole('button', { name: `Reject ${no.email}` }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: `Reject ${no.email}` })).toBeNull());
-
-    const users = (await api.get('/users')).data;
-    expect(users.find((u) => u.email === ok.email).status).toBe('approved');
-    expect(users.find((u) => u.email === no.email).status).toBe('rejected');
-    // approved user can now log in
-    await as().post('/auth/login', { email: ok.email, password: 'secret1' });
-
-    await userEvent.click(screen.getByRole('button', { name: `Make ${ok.email} admin` }));
-    expect(await screen.findByRole('button', { name: `Make ${ok.email} user` })).toBeInTheDocument();
-    expect((await api.get('/users')).data.find((u) => u.email === ok.email).role).toBe('admin');
-    await userEvent.click(screen.getByRole('button', { name: `Make ${ok.email} user` }));
-    expect(await screen.findByRole('button', { name: `Make ${ok.email} admin` })).toBeInTheDocument();
-
-    expect(screen.getByRole('button', { name: `Make ${ADMIN.email} user` })).toBeDisabled(); // self
-    expect(me.user.email).toBe(ADMIN.email);
   });
 
   it('reports: 3 downloads produce valid non-empty files', async () => {
@@ -185,13 +126,6 @@ describe('Phase 8 break', () => {
     for (const t of ['Dashboard', 'Materials', 'Stock Movement', 'Ledger', 'Reports']) expect(within(nav).getByRole('link', { name: t })).toBeInTheDocument();
   });
 
-  it('normal user hitting /admin/users by URL is redirected to the dashboard', async () => {
-    await session(await makeUser());
-    renderApp('/admin/users');
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Users' })).toBeNull();
-  });
-
   it('the old /users URL no longer reaches anything, even for an admin', async () => {
     await session(ADMIN);
     renderApp('/users');
@@ -202,50 +136,6 @@ describe('Phase 8 break', () => {
   it('logged-out user hitting /users is sent to login', async () => {
     renderApp('/users');
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-  });
-
-  it('admin ledger edit: invalid quantity blocked client-side; cancel leaves data alone', async () => {
-    const api = await adminApi();
-    const L = await seedLedger(api, 'BK');
-    await session(ADMIN);
-    renderApp('/admin/ledger');
-    await pickMaterial(L.matId);
-    await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: /^Edit movement/ }));
-    await type(within(rowOf(L.moves[0])).getByLabelText('Quantity'), '-5');
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/greater than 0/);
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: 'Cancel' }));
-    expect((await api.get(`/materials/${L.matId}`)).data.currentQuantity).toBe(120);
-  });
-
-  it('admin ledger edit: saving without changes is clean (no edited flag, same numbers)', async () => {
-    const api = await adminApi();
-    const L = await seedLedger(api, 'NO');
-    await session(ADMIN);
-    renderApp('/admin/ledger');
-    await pickMaterial(L.matId);
-    await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
-    await userEvent.click(within(rowOf(L.moves[1])).getByRole('button', { name: /^Edit movement/ }));
-    await userEvent.click(within(rowOf(L.moves[1])).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(within(rowOf(L.moves[1])).queryByRole('button', { name: 'Save' })).toBeNull());
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(within(rowOf(L.moves[1])).queryByTitle('edited')).toBeNull();
-    expect((await api.get(`/materials/${L.matId}`)).data.currentQuantity).toBe(120);
-  });
-
-  it('admin ledger edit: changing IN->OUT recalculates and shows exceeded badge when stock runs short', async () => {
-    const api = await adminApi();
-    const L = await seedLedger(api, 'TY');
-    await session(ADMIN);
-    renderApp('/admin/ledger');
-    await pickMaterial(L.matId);
-    await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: /^Edit movement/ }));
-    await userEvent.selectOptions(within(rowOf(L.moves[0])).getByLabelText('Type'), 'OUT');
-    await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(within(rowOf(L.moves[0])).getByText('exceeded')).toBeInTheDocument());
-    expect(within(rowOf(L.moves[0])).getByText('-100')).toBeInTheDocument();
   });
 
   it('reports: a rejected filter shows the API message instead of a broken file', async () => {
