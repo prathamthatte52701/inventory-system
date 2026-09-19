@@ -270,11 +270,13 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 
 ## Testing
 
-Everything runs against real HTTP and a real MongoDB. Tests use **throwaway databases** (`inventory_test`, `inventory_test_ui`) that they drop when finished, so your real data is never touched.
+Everything runs against real HTTP and a real MongoDB. Tests use **throwaway databases** (`inventory_test*`, one per suite, plus `inventory_test_ui` and `inventory_test_ui_admin` for the two UI suites) that they drop when finished, so your real data is never touched.
 
 ```bash
-cd backend  && npm test        # models, auth, materials, movements, reports, roles, end-to-end
-cd frontend && npm test        # every page, rendered against the real API
+cd backend  && npm test              # every backend suite below except stress
+cd backend  && npm run stress        # multi-user load test; slow against a remote DB, so it is NOT part of `npm test`
+cd frontend && npm test              # the user app's pages, rendered against the real API
+cd frontend-admin && npm test        # admin console: harness smoke test only (see the note under the table)
 ```
 
 | Suite | File | Covers |
@@ -285,9 +287,18 @@ cd frontend && npm test        # every page, rendered against the real API
 | Reports | `backend/tests/reports.test.js` | Dashboard numbers, xlsx/pdf headers and rows, empty data, bad date ranges |
 | Roles | `backend/tests/roles.test.js` | Promote/demote, self-change block |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
+| Admin backend | `backend/tests/admin.test.js` | `GET /audit` (filters, pagination, injection guards), `GET /analytics/*`, `GET /users/:id/activity`, admin-only access |
+| Fixes & limits | `backend/tests/fixes.test.js` | Login lockout (5 attempts / 15 min, survives restarts and other processes), movement pagination + streamed exports, httpOnly cookie session (Set-Cookie flags, logout revocation, CORS credentials), DB-level material lock incl. a crashed holder and two real processes |
+| Hardening | `backend/tests/hardening.test.js` | Shared pagination/error helpers, `GET /users` pagination, signup rate limit (default 5 per IP per hour), new indexes, generic "Invalid material data" message |
+| Stress | `backend/tests/stress.test.js` | 1 admin + 4 users hammering read endpoints on a large history while writes are in flight. Run with `npm run stress` |
 | **QA (adversarial)** | `backend/tests/qa.test.js` | Spec compliance against the workflow PDF, auth-bypass matrix, role escalation, injection, oversized/NaN/Infinity inputs, malformed ids, 20 simultaneous OUTs, mixed-concurrency chaos, 19-movement history with 5 edits checked against an independent oracle |
-| Frontend | `frontend/tests/phase7.test.jsx`, `phase8.test.jsx` | Login, signup, dashboard, materials, movement form, ledger edit, approvals, downloads, route guards |
-| **Frontend QA** | `frontend/tests/qa.test.jsx` | Empty submits, double-clicks, Back/Forward, corrupt/expired/tampered sessions, direct admin URLs, numeric edge cases, hostile text |
+| Frontend | `frontend/tests/phase7.test.jsx`, `phase8.test.jsx` | Login, signup, dashboard, read-only materials, movement form, report downloads, navbar and route guards |
+| **Frontend QA** | `frontend/tests/qa.test.jsx` | Empty submits, double-clicks, Back/Forward, corrupt/expired/tampered sessions, numeric edge cases, hostile text |
+| Frontend ledger paging | `frontend/tests/ledgerPaging.test.jsx` | Every movement past the backend's 200-row page cap stays reachable through Prev/Next |
+| Frontend loading state | `frontend/tests/materialsLoading.test.jsx` | The Materials page never flashes "No materials yet." before data arrives, and never shows it after a failed fetch |
+| Admin smoke | `frontend-admin/tests/smoke.test.jsx` | Renders `/login` and expects the "Admin sign in" heading: proves install, run and pass for the admin harness, nothing more |
+
+> **Admin console coverage is still pending.** `frontend-admin/` has only the smoke test above, so its materials CRUD, movement corrections, user approve/reject, audit log and analytics pages are covered only indirectly (through the backend suites) until a proper suite is written there. The old in-app `/admin/*` UI tests were deleted from `frontend/tests/` when the admin console became a separate app.
 
 ## Project structure
 
@@ -296,11 +307,11 @@ inventory system/
 ├── backend/
 │   ├── app.js  server.js
 │   ├── config/db.js                 # Atlas connection (+ DNS fallback)
-│   ├── models/                      # User · Material · Movement · AuditLog
+│   ├── models/                      # User · Material · Movement · AuditLog · LoginAttempt
 │   ├── middleware/                  # auth (requireAuth/requireAdmin) · validate · fields (strict validators)
-│   ├── controllers/                 # auth · user · material · movement · report
+│   ├── controllers/                 # auth · user · material · movement · report · audit · analytics
 │   ├── routes/
-│   ├── utils/                       # costing.js (engine) · jwt · audit · seedAdmins
+│   ├── utils/                       # costing.js (engine + DB lock) · pagination · errors · loginLimiter · cookie · jwt · audit · seedAdmins
 │   ├── tests/
 │   ├── .env                         # real secrets, git-ignored
 │   └── .env.example                 # blank template, committed
@@ -311,13 +322,13 @@ inventory system/
 │   │   ├── components/LedgerTable.jsx   # read-only ledger
 │   │   ├── components/ui/           # shadcn-style kit (button, field, badge, alert, table, card, page)
 │   │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Reports
-│   └── tests/
+│   └── tests/                       # harness + setup + user-app suites
 └── frontend-admin/                  # admin console, separate app (port 5174)
     ├── src/
     │   ├── api.js  AuthContext.jsx  RequireAdmin.jsx  Layout.jsx  App.jsx  useGuard.js
     │   ├── components/LedgerTable.jsx   # editable ledger (movement corrections)
     │   └── pages/                   # Login · AdminDashboard · AdminMaterials · AdminLedger · AdminUsers · AdminAudit · AdminAnalytics
-    └── tests/
+    └── tests/                       # harness (setup, globalSetup) + one smoke test; full admin coverage pending
 ```
 
 ## Security notes
