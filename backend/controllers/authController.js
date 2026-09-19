@@ -4,18 +4,30 @@ const { sign, verify } = require('../utils/jwt');
 const { NAME, setAuthCookie, clearAuthCookie } = require('../utils/cookie');
 const limiter = require('../utils/loginLimiter');
 const audit = require('../utils/audit');
+const { fail } = require('../utils/errors');
 
 exports.signup = async (req, res, next) => {
   try {
+    // limits read per request so they can be tuned via env; charged before any lookup/hashing so bursts cannot slip past
+    const windowMs = Number(process.env.SIGNUP_RATE_WINDOW_MS) || 60 * 60 * 1000;
+    const maxAttempts = Number(process.env.SIGNUP_RATE_MAX) || 5;
+    const { blocked, retryAfterSeconds } = await limiter.charge(`signup:ip:${req.ip}`, { maxAttempts, windowMs });
+    if (blocked) {
+      res.set('Retry-After', String(retryAfterSeconds));
+      return res.status(429).json({
+        message: `Too many signups from this address. Try again in ${Math.ceil(retryAfterSeconds / 60)} minute(s).`,
+        retryAfterSeconds,
+      });
+    }
+
     const { name, email, password } = req.body;
-    if (await User.findOne({ email: email.toLowerCase() }))
-      return res.status(409).json({ message: 'Email already registered' });
+    if (await User.findOne({ email: email.toLowerCase() })) return fail(res, 409, 'Email already registered');
     // role/status are never taken from the body
     const user = await User.create({ name, email, passwordHash: await User.hashPassword(password) });
     await audit(req, 'SIGNUP', 'User', user._id, {}, user);
     res.status(201).json({ message: 'Signup received. Awaiting admin approval.', id: user._id, status: user.status });
   } catch (e) {
-    if (e.code === 11000) return res.status(409).json({ message: 'Email already registered' });
+    if (e.code === 11000) return fail(res, 409, 'Email already registered');
     next(e);
   }
 };
@@ -40,11 +52,11 @@ exports.login = async (req, res, next) => {
 
     const user = await User.findOne({ email }).select('+passwordHash +tokenVersion');
     const ok = user ? await user.comparePassword(password) : (await bcrypt.compare(password, DUMMY_HASH), false);
-    if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
+    if (!ok) return fail(res, 401, 'Invalid email or password');
 
     await limiter.reset(email); // correct password: the counter starts over
-    if (user.status === 'pending') return res.status(403).json({ message: 'Account pending admin approval' });
-    if (user.status === 'rejected') return res.status(403).json({ message: 'Account rejected' });
+    if (user.status === 'pending') return fail(res, 403, 'Account pending admin approval');
+    if (user.status === 'rejected') return fail(res, 403, 'Account rejected');
     await audit(req, 'LOGIN', 'User', user._id, {}, user);
     setAuthCookie(res, sign(user)); // the token is never put in the response body
     res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });

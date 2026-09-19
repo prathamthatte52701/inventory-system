@@ -1,6 +1,7 @@
 // Shared integration harness: throwaway DB, seeded admin + one approved normal user.
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
 process.env.NODE_ENV = 'test';
+process.env.SIGNUP_RATE_MAX = process.env.SIGNUP_RATE_MAX || '10000'; // suite signs up many users from one IP; dedicated tests lower it
 const assert = require('assert');
 const mongoose = require('mongoose');
 const app = require('../app');
@@ -40,8 +41,8 @@ module.exports = async function setup(label) {
       const out = { s: r.status, b, headers: r.headers, token: tokenFromHeaders(r.headers) };
       // Older tests treat GET /movements as "all movements": walk every page for them. Calls that pass page= or
       // limit= are left alone, so pagination tests see the real paginated envelope.
-      if (method === 'GET' && /^[/]movements([?]|$)/.test(path) && out.s === 200 && b && Array.isArray(b.data)) out.paged = b; // the raw envelope, for pagination tests
-      if (method === 'GET' && /^[/]movements([?]|$)/.test(path) && !/[?&](page|limit)=/.test(path) && out.s === 200 && b && Array.isArray(b.data)) {
+      if (method === 'GET' && /^[/](movements|users)([?]|$)/.test(path) && out.s === 200 && b && Array.isArray(b.data)) out.paged = b; // the raw envelope, for pagination tests
+      if (method === 'GET' && /^[/](movements|users)([?]|$)/.test(path) && !/[?&](page|limit)=/.test(path) && out.s === 200 && b && Array.isArray(b.data)) {
         const sep = path.includes('?') ? '&' : '?';
         let all = [];
         const first = await (await fetch(base + path + sep + 'limit=200&page=1', { headers: token ? { Cookie: 'token=' + token } : {} })).json();

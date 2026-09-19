@@ -1,19 +1,11 @@
-const mongoose = require('mongoose');
 const { isId } = require('../middleware/fields');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const Material = require('../models/Material');
 const Movement = require('../models/Movement');
 const { ORDER } = require('../utils/costing');
+const { httpError, wrap } = require('../utils/errors');
 
-const fail = (message) => Object.assign(new Error(message), { status: 400 });
-const wrap = (fn) => async (req, res, next) => {
-  try { await fn(req, res); } catch (e) {
-    if (res.headersSent) return res.destroy(e); // streaming already began: a truncated download must look truncated
-    if (e.status) return res.status(e.status).json({ message: e.message });
-    next(e);
-  }
-};
 const STATUS = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
 const stamp = () => new Date().toISOString().slice(0, 10);
 
@@ -33,7 +25,7 @@ exports.dashboard = wrap(async (req, res) => {
       stockValue: m.stockValue, status: m.status,
     })),
   });
-});
+}, 'report export failed');
 
 // Exports are complete (every matching row) but never held in memory: rows come from a database cursor and are
 // written to the response as they arrive, so memory stays flat however large the dataset is.
@@ -68,7 +60,7 @@ exports.stockExcel = wrap(async (req, res) => {
     id: m.materialId, desc: m.description, unit: m.unit, qty: m.currentQuantity,
     rate: m.currentRate, value: m.stockValue, status: STATUS[m.status],
   })));
-});
+}, 'report export failed');
 
 exports.stockPdf = wrap(async (req, res) => {
   const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
@@ -99,12 +91,12 @@ exports.stockPdf = wrap(async (req, res) => {
   } finally { await cursor.close().catch(() => {}); }
   if (!any) doc.font('Helvetica').text('No materials.', 40);
   doc.end();
-});
+}, 'report export failed');
 
 function parseDate(v, name, endOfDay) {
   if (v === undefined || v === '') return null;
   const d = new Date(v);
-  if (typeof v !== 'string' || Number.isNaN(+d)) throw fail(`Invalid ${name} date`);
+  if (typeof v !== 'string' || Number.isNaN(+d)) throw httpError(400, `Invalid ${name} date`);
   if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(v)) d.setUTCHours(23, 59, 59, 999); // date-only "to" is inclusive
   return d;
 }
@@ -113,11 +105,11 @@ exports.movementsExcel = wrap(async (req, res) => {
   const { material } = req.query;
   const filter = {};
   if (material !== undefined && material !== '') {
-    if (!isId(material)) throw fail('Invalid material id');
+    if (!isId(material)) throw httpError(400, 'Invalid material id');
     filter.material = material;
   }
   const from = parseDate(req.query.from, 'from'), to = parseDate(req.query.to, 'to', true);
-  if (from && to && from > to) throw fail('"from" must not be after "to"');
+  if (from && to && from > to) throw httpError(400, '"from" must not be after "to"');
   if (from || to) filter.movementDate = { ...(from && { $gte: from }), ...(to && { $lte: to }) };
 
   const cursor = Movement.find(filter).sort(ORDER).populate('material', 'materialId description').populate('createdBy', 'name').cursor({ batchSize: BATCH });
@@ -132,4 +124,4 @@ exports.movementsExcel = wrap(async (req, res) => {
     desc: m.material && m.material.description, type: m.type, qty: m.quantity, rate: m.rate,
     amount: m.amount, bal: m.balanceAfter, by: m.createdBy && m.createdBy.name, note: m.note || '',
   })));
-});
+}, 'report export failed');

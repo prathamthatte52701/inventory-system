@@ -19,8 +19,8 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([api.get('/users', { params: { status: 'pending' } }), api.get('/reports/dashboard'), api.get('/audit', { params: { limit: 5 } })])
-      .then(([u, r, a]) => setD({ pending: u.data.length, low: r.data.lowStockCount, out: r.data.outOfStockCount, recent: a.data.data }))
+    Promise.all([api.get('/users', { params: { status: 'pending', limit: 1 } }), api.get('/reports/dashboard'), api.get('/audit', { params: { limit: 5 } })])
+      .then(([u, r, a]) => setD({ pending: u.data.total, low: r.data.lowStockCount, out: r.data.outOfStockCount, recent: a.data.data }))
       .catch((e) => setError(errMsg(e)));
   }, []);
 

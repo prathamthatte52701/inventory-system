@@ -5,19 +5,32 @@ import { useAuth } from '../AuthContext';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { PageHeader, Section } from '@/components/ui/page';
+import { PageHeader, Pager, Section } from '@/components/ui/page';
 import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
+const PAGE_SIZE = 50;
+const PENDING_LIMIT = 200; // backend max page size
 const STATUS_TONE = { approved: 'green', pending: 'amber', rejected: 'red' };
 
 export default function AdminUsers() {
   const { user: me } = useAuth();
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState([]); // the current page of ALL users
+  const [pending, setPending] = useState([]); // pending signups, fetched separately so paging never hides one
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ total: 0, totalPages: 0 });
   const [error, setError] = useState('');
   const [run] = useGuard();
   const [open, setOpen] = useState(null); // { id, activity | null } for the expanded user
 
-  const load = useCallback(() => api.get('/users').then((r) => setUsers(r.data)).catch((e) => setError(errMsg(e))), []);
+  // GET /users is paginated ({ data, page, limit, total, totalPages })
+  const load = useCallback(() => Promise.all([
+    api.get('/users', { params: { status: 'pending', limit: PENDING_LIMIT } }),
+    api.get('/users', { params: { page, limit: PAGE_SIZE } }),
+  ]).then(([p, u]) => {
+    const { data, total, totalPages } = u.data;
+    if (!data.length && page > 1 && totalPages) return setPage(totalPages); // page vanished: step back
+    setPending(p.data.data); setUsers(data); setMeta({ total, totalPages });
+  }).catch((e) => setError(errMsg(e))), [page]);
   useEffect(() => { load(); }, [load]);
 
   const act = (fn) => run(async () => {
@@ -32,7 +45,6 @@ export default function AdminUsers() {
       setOpen((o) => (o?.id === u._id ? { id: u._id, activity: data } : o)); // ignore if another row was opened meanwhile
     } catch (e) { setError(errMsg(e)); setOpen(null); }
   };
-  const pending = users.filter((u) => u.status === 'pending');
 
   return (
     <>
@@ -100,6 +112,7 @@ export default function AdminUsers() {
             </tbody>
           </Table>
         </TableWrap>
+        <Pager page={page} totalPages={meta.totalPages} total={meta.total} onPage={setPage} />
       </Section>
     </>
   );

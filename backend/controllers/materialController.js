@@ -1,15 +1,14 @@
-const mongoose = require('mongoose');
 const { isId } = require('../middleware/fields');
 const Material = require('../models/Material');
 const Movement = require('../models/Movement');
 const audit = require('../utils/audit');
 const { withLock } = require('../utils/costing');
+const { fail } = require('../utils/errors');
 
 const EDITABLE = ['description', 'unit', 'openingRate', 'openingQuantity', 'minimumQuantity'];
 const pick = (src, keys) => Object.fromEntries(keys.filter((k) => src[k] !== undefined).map((k) => [k, src[k]]));
 
-const bad = (res, message) => res.status(400).json({ message });
-const badId = (req, res) => !isId(req.params.id) && bad(res, 'Invalid material id');
+const badId = (req, res) => !isId(req.params.id) && fail(res, 400, 'Invalid material id');
 
 exports.create = async (req, res, next) => {
   try {
@@ -24,8 +23,8 @@ exports.create = async (req, res, next) => {
     await audit(req, 'MATERIAL_CREATE', 'Material', m._id, { materialId: m.materialId });
     res.status(201).json(m);
   } catch (e) {
-    if (e.code === 11000) return res.status(409).json({ message: 'Material ID already exists' });
-    if (e.name === 'ValidationError') return bad(res, e.message);
+    if (e.code === 11000) return fail(res, 409, 'Material ID already exists');
+    if (e.name === 'ValidationError') { console.error('[material validation]', e.message); return fail(res, 400, 'Invalid material data'); }
     next(e);
   }
 };
@@ -45,7 +44,7 @@ exports.get = async (req, res, next) => {
   try {
     if (badId(req, res)) return;
     const m = await Material.findById(req.params.id);
-    if (!m) return res.status(404).json({ message: 'Material not found' });
+    if (!m) return fail(res, 404, 'Material not found');
     res.json(m);
   } catch (e) {
     next(e);
@@ -77,8 +76,8 @@ exports.update = async (req, res, next) => {
     });
     res.status(out.s).json(out.b);
   } catch (e) {
-    if (e.status) return res.status(e.status).json({ message: e.message });
-    if (e.name === 'ValidationError') return bad(res, e.message);
+    if (e.status) return fail(res, e.status, e.message);
+    if (e.name === 'ValidationError') { console.error('[material validation]', e.message); return fail(res, 400, 'Invalid material data'); }
     next(e);
   }
 };
@@ -87,7 +86,7 @@ const setActive = (isActive) => async (req, res, next) => {
   try {
     if (badId(req, res)) return;
     const m = await Material.findByIdAndUpdate(req.params.id, { isActive }, { returnDocument: 'after' });
-    if (!m) return res.status(404).json({ message: 'Material not found' });
+    if (!m) return fail(res, 404, 'Material not found');
     await audit(req, isActive ? 'MATERIAL_REACTIVATE' : 'MATERIAL_DEACTIVATE', 'Material', m._id);
     res.json(m); // idempotent: already in target state is not an error
   } catch (e) {

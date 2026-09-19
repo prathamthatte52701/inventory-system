@@ -28,4 +28,6 @@ materialSchema.virtual('status').get(function () {
   return 'AVAILABLE';
 });
 
+materialSchema.index({ isActive: 1 }); // dashboard loads and stock report exports
+
 module.exports = mongoose.model('Material', materialSchema);

@@ -77,7 +77,7 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
   });
   await t('admin lists pending users', async () => {
     const r = await call('GET', '/users?status=pending', undefined, A);
-    is(r, 200); assert(r.b.length === 2);
+    is(r, 200); assert(r.b.data.length === 2 && r.b.total === 2); // paginated envelope
     assert(!JSON.stringify(r.b).includes('passwordHash'));
   });
   await t('approve works', async () => {

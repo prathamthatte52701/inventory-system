@@ -20,4 +20,6 @@ userSchema.methods.comparePassword = function (plain) {
 };
 userSchema.statics.hashPassword = (plain) => bcrypt.hash(plain, 10);
 
+userSchema.index({ status: 1 }); // admin pending-signups query
+
 module.exports = mongoose.model('User', userSchema);

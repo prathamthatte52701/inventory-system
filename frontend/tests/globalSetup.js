@@ -9,6 +9,7 @@ const require = createRequire(path.join(backend, 'x.js'));
 export default async function setup() {
   require('dotenv').config({ path: path.join(backend, '.env'), quiet: true });
   process.env.NODE_ENV = 'test';
+  process.env.SIGNUP_RATE_MAX ||= '10000'; // UI tests sign up many users from one IP; the signup limiter has its own backend tests
   process.env.COOKIE_SECURE = 'false'; // jsdom talks plain http to the test server
   process.env.CORS_ORIGIN = 'http://localhost:3000'; // jsdom's origin
   const mongoose = require('mongoose');

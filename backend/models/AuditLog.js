@@ -13,5 +13,7 @@ const auditLogSchema = new mongoose.Schema({
 
 auditLogSchema.index({ createdAt: 1 });
 auditLogSchema.index({ entityType: 1, entityId: 1 });
+auditLogSchema.index({ user: 1 }); // admin audit page: filter by user
+auditLogSchema.index({ action: 1 }); // admin audit page: filter by action
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);
