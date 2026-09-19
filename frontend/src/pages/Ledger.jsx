@@ -1,25 +1,38 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
 import { useGuard } from '../useGuard';
 import { useAuth } from '../AuthContext';
 
 const day = (d) => String(d).slice(0, 10);
+const PAGE_SIZE = 200; // backend MAX_LIMIT; the UI pages through the rest
 
 export default function Ledger() {
   const { isAdmin } = useAuth();
   const [materials, setMaterials] = useState([]);
   const [filter, setFilter] = useState('');
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ total: 0, totalPages: 0 });
+  const [loaded, setLoaded] = useState(false);
+  const latest = useRef(0);
   const [error, setError] = useState('');
   const [run] = useGuard();
   const [edit, setEdit] = useState(null); // { id, type, quantity, rate, date, origDate, note }
 
   useEffect(() => { api.get('/materials').then((r) => setMaterials(r.data)).catch((e) => setError(errMsg(e))); }, []);
-  const load = useCallback(
-    () => api.get('/movements', { params: { limit: 200, ...(filter ? { material: filter } : {}) } }).then((r) => setRows(r.data.data)).catch((e) => setError(errMsg(e))),
-    [filter]
-  );
+  const load = useCallback(() => {
+    const seq = ++latest.current; // drop responses from superseded filter/page requests
+    return api.get('/movements', { params: { page, limit: PAGE_SIZE, ...(filter ? { material: filter } : {}) } })
+      .then((r) => {
+        if (seq !== latest.current) return;
+        const { data, total, totalPages } = r.data;
+        if (!data.length && page > 1 && totalPages) return setPage(totalPages); // page vanished: step back
+        setRows(data); setMeta({ total, totalPages }); setLoaded(true);
+      })
+      .catch((e) => { if (seq === latest.current) setError(errMsg(e)); });
+  }, [filter, page]);
   useEffect(() => { load(); }, [load]);
+  const pickFilter = (v) => { setFilter(v); setPage(1); };
 
   const startEdit = (m) => setEdit({
     id: m._id, type: m.type, quantity: String(m.quantity), rate: m.enteredRate == null ? '' : String(m.enteredRate),
@@ -55,7 +68,7 @@ export default function Ledger() {
       <h1>Ledger</h1>
       <div className="row" style={{ marginBottom: 12 }}>
         <label>Filter by material
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <select value={filter} onChange={(e) => pickFilter(e.target.value)}>
             <option value="">All materials</option>
             {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
           </select>
@@ -95,9 +108,16 @@ export default function Ledger() {
               </tr>
             );
           })}
-          {!rows.length && <tr><td colSpan={isAdmin ? 10 : 9} className="muted">No movements yet.</td></tr>}
+          {!rows.length && loaded && <tr><td colSpan={isAdmin ? 10 : 9} className="muted">No movements yet.</td></tr>}
         </tbody>
       </table>
+      {meta.totalPages > 1 && (
+        <div className="row" style={{ marginTop: 12 }}>
+          <button onClick={() => setPage(page - 1)} disabled={page <= 1}>Prev</button>
+          <span data-testid="page-info">Page {page} of {meta.totalPages} ({meta.total} total)</span>
+          <button onClick={() => setPage(page + 1)} disabled={page >= meta.totalPages}>Next</button>
+        </div>
+      )}
     </>
   );
 }
