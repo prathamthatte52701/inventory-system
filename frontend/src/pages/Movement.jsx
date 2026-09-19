@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
 import { useGuard } from '../useGuard';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Field, Input, Select } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const blank = () => ({ material: '', type: 'IN', quantity: '', rate: '', movementDate: today(), note: '' });
@@ -46,37 +51,43 @@ export default function Movement() {
 
   return (
     <>
-      <h1>Stock Movement</h1>
-      <form className="card" onSubmit={submit} noValidate>
-        <div className="row">
-          <label>Material
-            <select value={f.material} onChange={set('material')}>
-              <option value="">-- select --</option>
-              {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
-            </select>
-          </label>
-          <label>Type
-            <select value={f.type} onChange={set('type')}>
-              <option value="IN">IN</option><option value="OUT">OUT</option><option value="RETURN">RETURN</option>
-            </select>
-          </label>
-          <label>Quantity<input type="number" step="any" value={f.quantity} onChange={set('quantity')} /></label>
-          {f.type === 'IN' && <label>Rate<input type="number" step="any" value={f.rate} onChange={set('rate')} /></label>}
-          <label>Date<input type="date" value={f.movementDate} onChange={set('movementDate')} /></label>
-          <label>Note<input value={f.note} onChange={set('note')} /></label>
-          <button className="primary" disabled={busy}>Record Movement</button>
-        </div>
-        {selected && <p className="muted">Available: {fmt(selected.currentQuantity)} {selected.unit} @ ₹{fmt(selected.currentRate)}</p>}
-      </form>
+      <PageHeader title="Stock Movement" description="Record stock coming in, going out, or being returned." />
+      <Card>
+        <form onSubmit={submit} noValidate className="grid gap-5 p-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Material" className="sm:col-span-2 lg:col-span-1">
+              <Select value={f.material} onChange={set('material')}>
+                <option value="">-- select --</option>
+                {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
+              </Select>
+            </Field>
+            <Field label="Type">
+              <Select value={f.type} onChange={set('type')}>
+                <option value="IN">IN</option><option value="OUT">OUT</option><option value="RETURN">RETURN</option>
+              </Select>
+            </Field>
+            <Field label="Quantity"><Input type="number" step="any" value={f.quantity} onChange={set('quantity')} /></Field>
+            {f.type === 'IN' && <Field label="Rate"><Input type="number" step="any" value={f.rate} onChange={set('rate')} /></Field>}
+            <Field label="Date"><Input type="date" value={f.movementDate} onChange={set('movementDate')} /></Field>
+            <Field label="Note"><Input value={f.note} onChange={set('note')} /></Field>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+            {selected
+              ? <p className="text-sm text-slate-500">Available: <span className="font-medium text-slate-700">{fmt(selected.currentQuantity)} {selected.unit}</span> @ ₹{fmt(selected.currentRate)}</p>
+              : <span />}
+            <Button variant="default" disabled={busy}>Record Movement</Button>
+          </div>
+        </form>
+      </Card>
 
-      {error && <div className="error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
+      {error && <Alert variant="error" role="alert" className="mt-4">{error}</Alert>}
       {result && (
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          {result.warning && <div className="warning" role="status">⚠ {result.warning}</div>}
-          <div className="success" role="status">
+        <div className="mt-4 grid gap-3">
+          {result.warning && <Alert variant="warning" role="status">{result.warning}</Alert>}
+          <Alert variant="success" role="status">
             Recorded {result.movement.type} of {fmt(result.movement.quantity)} {result.material.unit} for {result.material.materialId}
             {' '}(amount ₹{fmt(result.movement.amount)}). New balance: <b data-testid="balance">{fmt(result.movement.balanceAfter)}</b> {result.material.unit}.
-          </div>
+          </Alert>
         </div>
       )}
     </>

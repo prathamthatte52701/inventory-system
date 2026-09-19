@@ -2,6 +2,13 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import api, { errMsg } from '../api';
 import { useGuard } from '../useGuard';
 import { useAuth } from '../AuthContext';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { PageHeader, Section } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+
+const STATUS_TONE = { approved: 'green', pending: 'amber', rejected: 'red' };
 
 export default function AdminUsers() {
   const { user: me } = useAuth();
@@ -29,63 +36,71 @@ export default function AdminUsers() {
 
   return (
     <>
-      <h1>Users</h1>
-      {error && <div className="error" role="alert">{error}</div>}
+      <PageHeader title="Users" description="Approve signups and manage who is an admin." />
+      {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
 
-      <section>
-        <h2>Pending signups</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Requested</th><th>Actions</th></tr></thead>
-          <tbody>
-            {pending.map((u) => (
-              <tr key={u._id}>
-                <td>{u.name}</td><td>{u.email}</td><td>{String(u.createdAt).slice(0, 10)}</td>
-                <td className="actions">
-                  <button className="primary" onClick={() => act(() => api.patch(`/users/${u._id}/approve`))} aria-label={`Approve ${u.email}`}>Approve</button>
-                  <button className="danger" onClick={() => act(() => api.patch(`/users/${u._id}/reject`))} aria-label={`Reject ${u.email}`}>Reject</button>
-                </td>
-              </tr>
-            ))}
-            {!pending.length && <tr><td colSpan="4" className="muted">No pending signups.</td></tr>}
-          </tbody>
-        </table>
-      </section>
+      <Section title="Pending signups" className="mt-0">
+        <TableWrap>
+          <Table>
+            <thead><tr><Th>Name</Th><Th>Email</Th><Th>Requested</Th><Th>Actions</Th></tr></thead>
+            <tbody>
+              {pending.map((u) => (
+                <Tr key={u._id}>
+                  <Td className="font-medium">{u.name}</Td><Td>{u.email}</Td><Td>{String(u.createdAt).slice(0, 10)}</Td>
+                  <Td>
+                    <span className="flex gap-2">
+                      <Button size="sm" variant="default" onClick={() => act(() => api.patch(`/users/${u._id}/approve`))} aria-label={`Approve ${u.email}`}>Approve</Button>
+                      <Button size="sm" variant="danger" onClick={() => act(() => api.patch(`/users/${u._id}/reject`))} aria-label={`Reject ${u.email}`}>Reject</Button>
+                    </span>
+                  </Td>
+                </Tr>
+              ))}
+              {!pending.length && <EmptyRow cols={4}>No pending signups.</EmptyRow>}
+            </tbody>
+          </Table>
+        </TableWrap>
+      </Section>
 
-      <section>
-        <h2>All users</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>
-            {users.map((u) => {
-              const self = u._id === me.id;
-              const next = u.role === 'admin' ? 'user' : 'admin';
-              return (
-                <Fragment key={u._id}>
-                  <tr>
-                    <td>{u.name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.status}</td>
-                    <td className="actions">
-                      <button disabled={self} title={self ? 'You cannot change your own role' : ''}
-                        onClick={() => act(() => api.patch(`/users/${u._id}/role`, { role: next }))} aria-label={`Make ${u.email} ${next}`}>
-                        Make {next}
-                      </button>
-                      <button onClick={() => toggleDetails(u)} aria-expanded={open?.id === u._id} aria-label={`Details for ${u.email}`}>
-                        {open?.id === u._id ? 'Hide' : 'Details'}
-                      </button>
-                    </td>
-                  </tr>
-                  {open?.id === u._id && (
-                    <tr data-testid={`activity-${u._id}`}><td colSpan="5" className="muted">
-                      {open.activity
-                        ? <>Movements created: <b>{open.activity.movementCount}</b>{open.activity.lastMovementAt && <> · last on {String(open.activity.lastMovementAt).slice(0, 10)}</>}</>
-                        : 'Loading…'}
-                    </td></tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+      <Section title="All users">
+        <TableWrap>
+          <Table>
+            <thead><tr><Th>Name</Th><Th>Email</Th><Th>Role</Th><Th>Status</Th><Th>Actions</Th></tr></thead>
+            <tbody>
+              {users.map((u) => {
+                const self = u._id === me.id;
+                const next = u.role === 'admin' ? 'user' : 'admin';
+                return (
+                  <Fragment key={u._id}>
+                    <Tr>
+                      <Td className="font-medium">{u.name}</Td><Td>{u.email}</Td>
+                      <Td><Badge tone={u.role === 'admin' ? 'primary' : 'slate'}>{u.role}</Badge></Td>
+                      <Td><Badge tone={STATUS_TONE[u.status] || 'slate'} dot>{u.status}</Badge></Td>
+                      <Td>
+                        <span className="flex gap-2">
+                          <Button size="sm" disabled={self} title={self ? 'You cannot change your own role' : ''}
+                            onClick={() => act(() => api.patch(`/users/${u._id}/role`, { role: next }))} aria-label={`Make ${u.email} ${next}`}>
+                            Make {next}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => toggleDetails(u)} aria-expanded={open?.id === u._id} aria-label={`Details for ${u.email}`}>
+                            {open?.id === u._id ? 'Hide' : 'Details'}
+                          </Button>
+                        </span>
+                      </Td>
+                    </Tr>
+                    {open?.id === u._id && (
+                      <tr data-testid={`activity-${u._id}`}><td colSpan="5" className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        {open.activity
+                          ? <>Movements created: <b>{open.activity.movementCount}</b>{open.activity.lastMovementAt && <> · last on {String(open.activity.lastMovementAt).slice(0, 10)}</>}</>
+                          : 'Loading…'}
+                      </td></tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </Table>
+        </TableWrap>
+      </Section>
     </>
   );
 }

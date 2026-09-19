@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import api, { errMsg, fmt } from '../api';
+import { Alert } from '@/components/ui/alert';
+import { Card, CardTitle } from '@/components/ui/card';
+import { Field, Input, Select } from '@/components/ui/field';
+import { PageHeader, Section, StatCard, StatGrid } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 const TYPES = ['IN', 'OUT', 'RETURN'];
-const COLORS = { IN: '#059669', OUT: '#dc2626', RETURN: '#2563eb' };
+// same palette as the badges/alerts (Tailwind emerald / red / sky), so charts read as part of the page
+const COLORS = { IN: '#10b981', OUT: '#ef4444', RETURN: '#0ea5e9' };
+const AXIS = { fontSize: 12, fill: '#64748b' };
 
 export default function AdminAnalytics() {
   const [range, setRange] = useState({ from: isoDay(Date.now() - 29 * 864e5), to: isoDay(Date.now()) });
@@ -32,61 +39,62 @@ export default function AdminAnalytics() {
 
   return (
     <>
-      <h1>Analytics</h1>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <label>From<input type="date" value={range.from} onChange={set('from')} /></label>
-        <label>To<input type="date" value={range.to} onChange={set('to')} /></label>
-        <label>Group by
-          <select value={bucket} onChange={(e) => setBucket(e.target.value)}><option value="day">Day</option><option value="week">Week</option></select>
-        </label>
-        <label>Measure
-          <select value={metric} onChange={(e) => setMetric(e.target.value)}><option value="amount">Value (₹)</option><option value="quantity">Quantity</option></select>
-        </label>
+      <PageHeader title="Analytics" description="Movement volume and the materials that move the most." />
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="From"><Input type="date" value={range.from} onChange={set('from')} /></Field>
+        <Field label="To"><Input type="date" value={range.to} onChange={set('to')} /></Field>
+        <Field label="Group by">
+          <Select value={bucket} onChange={(e) => setBucket(e.target.value)}><option value="day">Day</option><option value="week">Week</option></Select>
+        </Field>
+        <Field label="Measure">
+          <Select value={metric} onChange={(e) => setMetric(e.target.value)}><option value="amount">Value (₹)</option><option value="quantity">Quantity</option></Select>
+        </Field>
       </div>
-      {!valid && <div className="warning" role="alert">Pick a valid date range (From must not be after To).</div>}
-      {error && <div className="error" role="alert">{error}</div>}
+      {!valid && <Alert variant="warning" role="alert" className="mb-4">Pick a valid date range (From must not be after To).</Alert>}
+      {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
 
       {vol && (
         <>
-          <div className="stats" data-testid="volume-totals">
-            {TYPES.map((t) => (
-              <div className="card stat" key={t}>
-                <b data-testid={`total-${t}`}>{vol.totals[t].count}</b><span>{t} movements · ₹{fmt(vol.totals[t].amount)}</span>
-              </div>
-            ))}
-          </div>
-          <section className="card">
-            <h2>Movement volume ({metric === 'amount' ? '₹' : 'qty'} per {bucket})</h2>
+          <StatGrid data-testid="volume-totals" className="lg:grid-cols-3">
+            {TYPES.map((t) => <StatCard key={t} value={vol.totals[t].count} label={`${t} movements · ₹${fmt(vol.totals[t].amount)}`} testId={`total-${t}`} />)}
+          </StatGrid>
+          <Card className="mt-6 p-5">
+            <CardTitle>Movement volume ({metric === 'amount' ? '₹' : 'qty'} per {bucket})</CardTitle>
             {chartData.length ? (
-              <div style={{ width: '100%', height: 300 }} data-testid="volume-chart">
+              <div style={{ width: '100%', height: 300 }} data-testid="volume-chart" className="mt-4">
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 300 }}>
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="bucket" /><YAxis /><Tooltip /><Legend />
-                    {TYPES.map((t) => <Bar key={t} dataKey={t} fill={COLORS[t]} />)}
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="bucket" tick={AXIS} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                    <YAxis tick={AXIS} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }} />
+                    <Legend wrapperStyle={{ fontSize: 13 }} />
+                    {TYPES.map((t) => <Bar key={t} dataKey={t} fill={COLORS[t]} radius={[3, 3, 0, 0]} />)}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            ) : <p className="muted" data-testid="volume-empty">No movements in this date range.</p>}
-          </section>
+            ) : <p className="mt-3 text-sm text-slate-500" data-testid="volume-empty">No movements in this date range.</p>}
+          </Card>
         </>
       )}
 
       {top && (
-        <section>
-          <h2>Top materials by {metric === 'amount' ? 'value' : 'quantity'}</h2>
-          <table>
-            <thead><tr><th>#</th><th>Material</th><th>Description</th><th className="num">Movements</th><th className="num">Quantity</th><th className="num">Value</th></tr></thead>
-            <tbody>
-              {top.data.map((m, i) => (
-                <tr key={m.material} data-testid={`top-${m.materialId}`}>
-                  <td>{i + 1}</td><td>{m.materialId}</td><td>{m.description}</td>
-                  <td className="num">{m.movements}</td><td className="num">{fmt(m.quantity)} {m.unit}</td><td className="num">₹{fmt(m.amount)}</td>
-                </tr>
-              ))}
-              {!top.data.length && <tr><td colSpan="6" className="muted">No movements in this date range.</td></tr>}
-            </tbody>
-          </table>
-        </section>
+        <Section title={`Top materials by ${metric === 'amount' ? 'value' : 'quantity'}`}>
+          <TableWrap>
+            <Table>
+              <thead><tr><Th>#</Th><Th>Material</Th><Th>Description</Th><Th num>Movements</Th><Th num>Quantity</Th><Th num>Value</Th></tr></thead>
+              <tbody>
+                {top.data.map((m, i) => (
+                  <Tr key={m.material} data-testid={`top-${m.materialId}`}>
+                    <Td className="text-slate-500">{i + 1}</Td><Td className="font-medium">{m.materialId}</Td><Td>{m.description}</Td>
+                    <Td num>{m.movements}</Td><Td num>{fmt(m.quantity)} {m.unit}</Td><Td num>₹{fmt(m.amount)}</Td>
+                  </Tr>
+                ))}
+                {!top.data.length && <EmptyRow cols={6}>No movements in this date range.</EmptyRow>}
+              </tbody>
+            </Table>
+          </TableWrap>
+        </Section>
       )}
     </>
   );

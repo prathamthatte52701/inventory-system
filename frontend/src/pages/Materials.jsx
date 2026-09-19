@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errMsg, fmt } from '../api';
-
-const LABEL = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
+import { Alert } from '@/components/ui/alert';
+import { StatusBadge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 export default function Materials() {
   const [items, setItems] = useState([]);
@@ -12,26 +14,28 @@ export default function Materials() {
 
   return (
     <>
-      <h1>Material Master</h1>
-      {error && <div className="error" role="alert">{error}</div>}
+      <PageHeader title="Material Master" description="Every material with its current stock and status." />
+      {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
 
-      <table>
-        <thead><tr>
-          <th>Material ID</th><th>Description</th><th>Unit</th><th className="num">Current Qty</th><th className="num">Rate</th>
-          <th className="num">Min Qty</th><th>Status</th>
-        </tr></thead>
-        <tbody>
-          {items.map((m) => (
-            <tr key={m._id} className={m.isActive ? '' : 'muted'}>
-              <td>{m.materialId}{!m.isActive && ' (inactive)'}</td><td>{m.description}</td><td>{m.unit}</td>
-              <td className="num">{fmt(m.currentQuantity)}</td><td className="num">₹{fmt(m.currentRate)}</td>
-              <td className="num">{fmt(m.minimumQuantity)}</td>
-              <td><span className={`badge ${m.status}`}>{LABEL[m.status]}</span></td>
-            </tr>
-          ))}
-          {!items.length && <tr><td colSpan="7" className="muted">No materials yet.</td></tr>}
-        </tbody>
-      </table>
+      <TableWrap>
+        <Table>
+          <thead><tr>
+            <Th>Material ID</Th><Th>Description</Th><Th>Unit</Th><Th num>Current Qty</Th><Th num>Rate</Th>
+            <Th num>Min Qty</Th><Th>Status</Th>
+          </tr></thead>
+          <tbody>
+            {items.map((m) => (
+              <Tr key={m._id} className={m.isActive ? '' : 'text-slate-400'}>
+                <Td className="font-medium">{m.materialId}{!m.isActive && ' (inactive)'}</Td><Td>{m.description}</Td><Td>{m.unit}</Td>
+                <Td num>{fmt(m.currentQuantity)}</Td><Td num>₹{fmt(m.currentRate)}</Td>
+                <Td num>{fmt(m.minimumQuantity)}</Td>
+                <Td><StatusBadge status={m.status} /></Td>
+              </Tr>
+            ))}
+            {!items.length && <EmptyRow cols={7}>No materials yet.</EmptyRow>}
+          </tbody>
+        </Table>
+      </TableWrap>
     </>
   );
 }

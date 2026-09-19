@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { errMsg } from '../api';
+import { Alert } from '@/components/ui/alert';
+import { ActionBadge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Field, Input, Select } from '@/components/ui/field';
+import { PageHeader, Pager } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const ENTITIES = ['Material', 'Movement', 'User'];
 const ACTIONS = ['LOGIN', 'LOGOUT', 'SIGNUP', 'MATERIAL_CREATE', 'MATERIAL_UPDATE', 'MOVEMENT_CREATE', 'MOVEMENT_EDIT', 'USER_APPROVE', 'USER_REJECT', 'USER_ROLE_CHANGE'];
@@ -36,43 +42,39 @@ export default function AdminAudit() {
 
   return (
     <>
-      <h1>Audit Log</h1>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <label>Entity type
-          <select value={filters.entityType} onChange={set('entityType')}>
+      <PageHeader title="Audit Log" description="Every recorded action, newest first." />
+      <div className="mb-4 grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Field label="Entity type">
+          <Select value={filters.entityType} onChange={set('entityType')}>
             <option value="">All</option>{ENTITIES.map((x) => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Action
-          <select value={filters.action} onChange={set('action')}>
+          </Select>
+        </Field>
+        <Field label="Action">
+          <Select value={filters.action} onChange={set('action')}>
             <option value="">All</option>{ACTIONS.map((x) => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>From<input type="date" value={filters.from} onChange={set('from')} /></label>
-        <label>To<input type="date" value={filters.to} onChange={set('to')} /></label>
-        <button onClick={() => { setFilters(NONE); setPage(1); }}>Clear</button>
+          </Select>
+        </Field>
+        <Field label="From"><Input type="date" value={filters.from} onChange={set('from')} /></Field>
+        <Field label="To"><Input type="date" value={filters.to} onChange={set('to')} /></Field>
+        <Button onClick={() => { setFilters(NONE); setPage(1); }}>Clear</Button>
       </div>
-      {badRange && <div className="warning" role="alert">"From" is after "To".</div>}
-      {error && <div className="error" role="alert">{error}</div>}
-      <table>
-        <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
-        <tbody>
-          {rows.map((a) => (
-            <tr key={a._id} data-testid={`audit-${a._id}`}>
-              <td><time dateTime={a.createdAt}>{new Date(a.createdAt).toLocaleString()}</time></td><td>{a.userEmail}</td><td>{a.action}</td><td>{a.entityType}</td>
-              <td className="muted">{a.details && Object.keys(a.details).length ? JSON.stringify(a.details) : ''}</td>
-            </tr>
-          ))}
-          {!rows.length && loaded && <tr><td colSpan="5" className="muted">No audit entries match.</td></tr>}
-        </tbody>
-      </table>
-      {meta.totalPages > 1 && (
-        <div className="row" style={{ marginTop: 12 }}>
-          <button onClick={() => setPage(page - 1)} disabled={page <= 1}>Prev</button>
-          <span data-testid="page-info">Page {page} of {meta.totalPages} ({meta.total} total)</span>
-          <button onClick={() => setPage(page + 1)} disabled={page >= meta.totalPages}>Next</button>
-        </div>
-      )}
+      {badRange && <Alert variant="warning" role="alert" className="mb-4">"From" is after "To".</Alert>}
+      {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
+      <TableWrap>
+        <Table>
+          <thead><tr><Th>When</Th><Th>User</Th><Th>Action</Th><Th>Entity</Th><Th>Details</Th></tr></thead>
+          <tbody>
+            {rows.map((a) => (
+              <Tr key={a._id} data-testid={`audit-${a._id}`}>
+                <Td className="whitespace-nowrap"><time dateTime={a.createdAt}>{new Date(a.createdAt).toLocaleString()}</time></Td><Td>{a.userEmail}</Td><Td><ActionBadge action={a.action} /></Td><Td>{a.entityType}</Td>
+                <Td className="max-w-md truncate font-mono text-xs text-slate-500">{a.details && Object.keys(a.details).length ? JSON.stringify(a.details) : ''}</Td>
+              </Tr>
+            ))}
+            {!rows.length && loaded && <EmptyRow cols={5}>No audit entries match.</EmptyRow>}
+          </tbody>
+        </Table>
+      </TableWrap>
+      <Pager page={page} totalPages={meta.totalPages} total={meta.total} onPage={setPage} />
     </>
   );
 }

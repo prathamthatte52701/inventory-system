@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { errMsg } from '../api';
 import { useGuard } from '../useGuard';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Field, Input } from '@/components/ui/field';
 
 export default function Login() {
   const { user, ready, denied, login } = useAuth();
@@ -30,13 +34,19 @@ export default function Login() {
   };
 
   return (
-    <form className="card form-narrow" onSubmit={submit} noValidate>
-      <h1>Admin sign in</h1>
-      {denied && !error && <div className="error" role="alert">This app is for admins only</div>}
-      {error && <div className="error" role="alert">{error}</div>}
-      <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-      <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-      <button className="primary" disabled={busy}>Sign in</button>
-    </form>
+    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
+      <form className="grid w-full max-w-sm gap-4 rounded-xl border border-slate-200 bg-white p-7 shadow-xl" onSubmit={submit} noValidate>
+        <div className="grid gap-1">
+          <ShieldCheck className="mb-1 h-8 w-8 text-primary" aria-hidden="true" />
+          <h1 className="text-2xl font-semibold tracking-tight">Admin sign in</h1>
+          <p className="text-sm text-slate-500">Restricted to administrators.</p>
+        </div>
+        {denied && !error && <Alert variant="error" role="alert">This app is for admins only</Alert>}
+        {error && <Alert variant="error" role="alert">{error}</Alert>}
+        <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+        <Button variant="default" className="w-full" disabled={busy}>Sign in</Button>
+      </form>
+    </div>
   );
 }

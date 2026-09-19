@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
+import { FileSpreadsheet, FileText } from 'lucide-react';
 import api, { downloadFile, errMsg } from '../api';
 import { useGuard } from '../useGuard';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardTitle } from '@/components/ui/card';
+import { Field, Input, Select } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page';
 
 export default function Reports() {
   const [materials, setMaterials] = useState([]);
@@ -28,29 +34,33 @@ export default function Reports() {
 
   return (
     <>
-      <h1>Reports</h1>
-      <section className="card">
-        <h2>Stock value</h2>
-        <div className="row">
-          <button disabled={busy} onClick={() => download('/reports/stock-value/excel')}>Download Stock Value (Excel)</button>
-          <button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}>Download Stock Value (PDF)</button>
-        </div>
-      </section>
-      <section className="card">
-        <h2>Movement history</h2>
-        <div className="row">
-          <label>Material
-            <select value={f.material} onChange={(e) => setF({ ...f, material: e.target.value })}>
-              <option value="">All materials</option>
-              {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
-            </select>
-          </label>
-          <label>From<input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></label>
-          <label>To<input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></label>
-          <button disabled={busy} onClick={() => download('/reports/movements/excel', params)}>Download Movement History (Excel)</button>
-        </div>
-      </section>
-      {msg && <div className={msg.ok ? 'success' : 'error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</div>}
+      <PageHeader title="Reports" description="Download stock and movement data as Excel or PDF." />
+      <div className="grid gap-5">
+        <Card className="p-5">
+          <CardTitle>Stock value</CardTitle>
+          <p className="mb-4 mt-1 text-sm text-slate-500">Current quantity, rate and value of every active material.</p>
+          <div className="flex flex-wrap gap-3">
+            <Button disabled={busy} onClick={() => download('/reports/stock-value/excel')}><FileSpreadsheet className="h-4 w-4 text-emerald-600" aria-hidden="true" />Download Stock Value (Excel)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}><FileText className="h-4 w-4 text-red-600" aria-hidden="true" />Download Stock Value (PDF)</Button>
+          </div>
+        </Card>
+        <Card className="p-5">
+          <CardTitle>Movement history</CardTitle>
+          <p className="mb-4 mt-1 text-sm text-slate-500">Every IN, OUT and RETURN; narrow it by material and date range.</p>
+          <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Material">
+              <Select value={f.material} onChange={(e) => setF({ ...f, material: e.target.value })}>
+                <option value="">All materials</option>
+                {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
+              </Select>
+            </Field>
+            <Field label="From"><Input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></Field>
+            <Field label="To"><Input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></Field>
+            <Button disabled={busy} onClick={() => download('/reports/movements/excel', params)}><FileSpreadsheet className="h-4 w-4 text-emerald-600" aria-hidden="true" />Download Movement History (Excel)</Button>
+          </div>
+        </Card>
+        {msg && <Alert variant={msg.ok ? 'success' : 'error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</Alert>}
+      </div>
     </>
   );
 }

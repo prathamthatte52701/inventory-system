@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { errMsg, fmt, parseNum, MAX_NUM } from '../api';
 import { useGuard } from '../useGuard';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Field, Input, Select } from '@/components/ui/field';
+import { PageHeader, Pager } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const day = (d) => String(d).slice(0, 10);
 const PAGE_SIZE = 200; // backend MAX_LIMIT; the UI pages through the rest
@@ -64,59 +70,57 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
 
   return (
     <>
-      <h1>{title}</h1>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <label>Filter by material
-          <select value={filter} onChange={(e) => pickFilter(e.target.value)}>
+      <PageHeader title={title} description={editable ? 'Correct a movement; every later balance and rate is recalculated automatically.' : 'Every stock movement, oldest first.'} />
+      <div className="mb-4 max-w-sm">
+        <Field label="Filter by material">
+          <Select value={filter} onChange={(e) => pickFilter(e.target.value)}>
             <option value="">All materials</option>
             {materials.map((m) => <option key={m._id} value={m._id}>{m.materialId} — {m.description}</option>)}
-          </select>
-        </label>
+          </Select>
+        </Field>
       </div>
-      {error && <div className="error" role="alert">{error}</div>}
-      <table>
-        <thead><tr>
-          <th>Date</th><th>Material ID</th><th>Type</th><th className="num">Qty</th><th className="num">Rate</th>
-          <th className="num">Amount</th><th className="num">Balance</th><th>By</th><th>Note</th>{editable && <th>Actions</th>}
-        </tr></thead>
-        <tbody>
-          {rows.map((m) => {
-            const editing = edit?.id === m._id;
-            return (
-              <tr key={m._id} data-testid={`row-${m._id}`}>
-                <td>{editing ? <input type="date" aria-label="Date" value={edit.date} onChange={set('date')} /> : day(m.movementDate)}</td>
-                <td>{m.material?.materialId}</td>
-                <td>{editing
-                  ? <select aria-label="Type" value={edit.type} onChange={set('type')}><option>IN</option><option>OUT</option><option>RETURN</option></select>
-                  : <>{m.type}{m.isEdited && <span className="muted" title="edited"> ✎</span>}{m.exceededStock && <span className="badge OUT_OF_STOCK" title="exceeded stock">exceeded</span>}</>}</td>
-                <td className="num">{editing ? <input type="number" step="any" aria-label="Quantity" value={edit.quantity} onChange={set('quantity')} /> : fmt(m.quantity)}</td>
-                <td className="num">{editing && edit.type === 'IN'
-                  ? <input type="number" step="any" aria-label="Rate" value={edit.rate} onChange={set('rate')} />
-                  : `₹${fmt(m.rate)}`}</td>
-                <td className="num">₹{fmt(m.amount)}</td>
-                <td className="num">{fmt(m.balanceAfter)}</td>
-                <td>{m.createdBy?.name}</td>
-                <td>{editing ? <input aria-label="Note" value={edit.note} onChange={set('note')} /> : m.note}</td>
-                {editable && (
-                  <td className="actions">
-                    {editing
-                      ? <><button className="primary" onClick={save}>Save</button><button onClick={() => setEdit(null)}>Cancel</button></>
-                      : <button onClick={() => startEdit(m)} aria-label={`Edit movement ${m._id}`}>Edit</button>}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-          {!rows.length && loaded && <tr><td colSpan={editable ? 10 : 9} className="muted">No movements yet.</td></tr>}
-        </tbody>
-      </table>
-      {meta.totalPages > 1 && (
-        <div className="row" style={{ marginTop: 12 }}>
-          <button onClick={() => setPage(page - 1)} disabled={page <= 1}>Prev</button>
-          <span data-testid="page-info">Page {page} of {meta.totalPages} ({meta.total} total)</span>
-          <button onClick={() => setPage(page + 1)} disabled={page >= meta.totalPages}>Next</button>
-        </div>
-      )}
+      {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
+      <TableWrap>
+        <Table>
+          <thead><tr>
+            <Th>Date</Th><Th>Material ID</Th><Th>Type</Th><Th num>Qty</Th><Th num>Rate</Th>
+            <Th num>Amount</Th><Th num>Balance</Th><Th>By</Th><Th>Note</Th>{editable && <Th>Actions</Th>}
+          </tr></thead>
+          <tbody>
+            {rows.map((m) => {
+              const editing = edit?.id === m._id;
+              return (
+                <Tr key={m._id} data-testid={`row-${m._id}`} className={editing ? 'bg-primary/5 even:bg-primary/5' : ''}>
+                  <Td className="whitespace-nowrap">{editing ? <Input type="date" aria-label="Date" className="h-8 w-36" value={edit.date} onChange={set('date')} /> : day(m.movementDate)}</Td>
+                  <Td className="font-medium">{m.material?.materialId}</Td>
+                  <Td>{editing
+                    ? <Select aria-label="Type" className="h-8 w-24" value={edit.type} onChange={set('type')}><option>IN</option><option>OUT</option><option>RETURN</option></Select>
+                    : <span className="inline-flex items-center gap-1.5">{m.type}{m.isEdited && <span className="text-slate-400" title="edited"> ✎</span>}{m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}</span>}</Td>
+                  <Td num>{editing ? <Input type="number" step="any" aria-label="Quantity" className="h-8 w-20 text-right" value={edit.quantity} onChange={set('quantity')} /> : fmt(m.quantity)}</Td>
+                  <Td num>{editing && edit.type === 'IN'
+                    ? <Input type="number" step="any" aria-label="Rate" className="h-8 w-20 text-right" value={edit.rate} onChange={set('rate')} />
+                    : `₹${fmt(m.rate)}`}</Td>
+                  <Td num>₹{fmt(m.amount)}</Td>
+                  <Td num>{fmt(m.balanceAfter)}</Td>
+                  <Td>{m.createdBy?.name}</Td>
+                  <Td className="text-slate-500">{editing ? <Input aria-label="Note" className="h-8 w-36" value={edit.note} onChange={set('note')} /> : m.note}</Td>
+                  {editable && (
+                    <Td>
+                      <span className="flex gap-2">
+                        {editing
+                          ? <><Button variant="default" size="sm" onClick={save}>Save</Button><Button size="sm" onClick={() => setEdit(null)}>Cancel</Button></>
+                          : <Button size="sm" onClick={() => startEdit(m)} aria-label={`Edit movement ${m._id}`}>Edit</Button>}
+                      </span>
+                    </Td>
+                  )}
+                </Tr>
+              );
+            })}
+            {!rows.length && loaded && <EmptyRow cols={editable ? 10 : 9}>No movements yet.</EmptyRow>}
+          </tbody>
+        </Table>
+      </TableWrap>
+      <Pager page={page} totalPages={meta.totalPages} total={meta.total} onPage={setPage} />
     </>
   );
 }

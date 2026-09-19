@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Package } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { errMsg } from '../api';
 import { useGuard } from '../useGuard';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Field, Input } from '@/components/ui/field';
 
 export default function Login() {
   const { user, ready, login } = useAuth();
@@ -30,13 +34,17 @@ export default function Login() {
   };
 
   return (
-    <form className="card form-narrow" onSubmit={submit} noValidate>
-      <h1>Log in</h1>
-      {error && <div className="error" role="alert">{error}</div>}
-      <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-      <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-      <button className="primary" disabled={busy}>Log in</button>
-      <span className="muted">No account? <Link to="/signup">Sign up</Link></span>
+    <form className="mx-auto mt-12 grid w-full max-w-sm gap-4 rounded-xl border border-slate-200 bg-white p-7 shadow-sm" onSubmit={submit} noValidate>
+      <div className="grid gap-1">
+        <Package className="mb-1 h-7 w-7 text-primary" aria-hidden="true" />
+        <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
+        <p className="text-sm text-slate-500">Sign in to manage stock and movements.</p>
+      </div>
+      {error && <Alert variant="error" role="alert">{error}</Alert>}
+      <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+      <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+      <Button variant="default" className="w-full" disabled={busy}>Log in</Button>
+      <span className="text-center text-sm text-slate-500">No account? <Link to="/signup" className="font-medium text-primary hover:underline">Sign up</Link></span>
     </form>
   );
 }

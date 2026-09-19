@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import api, { errMsg, fmt } from '../api';
-
-const LABEL = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
+import { Alert } from '@/components/ui/alert';
+import { StatusBadge } from '@/components/ui/badge';
+import { Loading, PageHeader, StatCard, StatGrid } from '@/components/ui/page';
+import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 export default function Dashboard() {
   const [d, setD] = useState(null);
@@ -11,33 +13,35 @@ export default function Dashboard() {
     api.get('/reports/dashboard').then((r) => setD(r.data)).catch((e) => setError(errMsg(e)));
   }, []);
 
-  if (error) return <div className="error" role="alert">{error}</div>;
-  if (!d) return <p>Loading…</p>;
+  if (error) return <Alert variant="error" role="alert">{error}</Alert>;
+  if (!d) return <Loading />;
 
   return (
     <>
-      <h1>Dashboard</h1>
-      <div className="stats">
-        <div className="card stat"><b data-testid="total-materials">{d.totalMaterials}</b><span>Total Materials</span></div>
-        <div className="card stat"><b data-testid="total-value">₹{fmt(d.totalStockValue)}</b><span>Total Stock Value</span></div>
-        <div className="card stat"><b data-testid="low-count">{d.lowStockCount}</b><span>Low Stock</span></div>
-        <div className="card stat"><b data-testid="out-count">{d.outOfStockCount}</b><span>Out of Stock</span></div>
-      </div>
-      <table>
-        <thead><tr><th>Material ID</th><th>Description</th><th className="num">Current Qty</th><th className="num">Rate</th><th className="num">Stock Value</th><th>Status</th></tr></thead>
-        <tbody>
-          {d.materials.map((m) => (
-            <tr key={m._id}>
-              <td>{m.materialId}</td><td>{m.description}</td>
-              <td className="num">{fmt(m.currentQuantity)} {m.unit}</td>
-              <td className="num">₹{fmt(m.currentRate)}</td>
-              <td className="num">₹{fmt(m.stockValue)}</td>
-              <td><span className={`badge ${m.status}`}>{LABEL[m.status]}</span></td>
-            </tr>
-          ))}
-          {!d.materials.length && <tr><td colSpan="6" className="muted">No materials yet.</td></tr>}
-        </tbody>
-      </table>
+      <PageHeader title="Dashboard" description="Current stock across all active materials." />
+      <StatGrid className="mb-6">
+        <StatCard value={d.totalMaterials} label="Total Materials" testId="total-materials" />
+        <StatCard value={`₹${fmt(d.totalStockValue)}`} label="Total Stock Value" testId="total-value" />
+        <StatCard value={d.lowStockCount} label="Low Stock" testId="low-count" tone={d.lowStockCount ? 'warning' : 'default'} />
+        <StatCard value={d.outOfStockCount} label="Out of Stock" testId="out-count" tone={d.outOfStockCount ? 'danger' : 'default'} />
+      </StatGrid>
+      <TableWrap>
+        <Table>
+          <thead><tr><Th>Material ID</Th><Th>Description</Th><Th num>Current Qty</Th><Th num>Rate</Th><Th num>Stock Value</Th><Th>Status</Th></tr></thead>
+          <tbody>
+            {d.materials.map((m) => (
+              <Tr key={m._id}>
+                <Td className="font-medium">{m.materialId}</Td><Td>{m.description}</Td>
+                <Td num>{fmt(m.currentQuantity)} {m.unit}</Td>
+                <Td num>₹{fmt(m.currentRate)}</Td>
+                <Td num>₹{fmt(m.stockValue)}</Td>
+                <Td><StatusBadge status={m.status} /></Td>
+              </Tr>
+            ))}
+            {!d.materials.length && <EmptyRow cols={6}>No materials yet.</EmptyRow>}
+          </tbody>
+        </Table>
+      </TableWrap>
     </>
   );
 }

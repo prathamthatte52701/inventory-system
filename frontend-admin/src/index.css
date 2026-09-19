@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Design tokens. The two apps share every component and differ only in the accent colour:
+   user app = blue (frontend/src/index.css), admin console = violet. */
+@theme {
+  --color-primary: #7c3aed;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  body { @apply bg-slate-50 text-slate-900 antialiased; }
+  /* the number inputs' spin buttons are noise in a data-entry tool */
+  input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+}
