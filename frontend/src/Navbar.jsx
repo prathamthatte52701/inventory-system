@@ -13,7 +13,7 @@ export default function Navbar() {
       <NavLink to="/movement">Stock Movement</NavLink>
       <NavLink to="/ledger">Ledger</NavLink>
       <NavLink to="/reports">Reports</NavLink>
-      {isAdmin && <NavLink to="/users">Users</NavLink>}
+      {isAdmin && <NavLink to="/admin">Admin</NavLink>}
       <span className="spacer" />
       <span className="who">{user.name}{isAdmin ? ' (admin)' : ''}</span>
       <button onClick={() => { logout(); nav('/login'); }}>Logout</button>

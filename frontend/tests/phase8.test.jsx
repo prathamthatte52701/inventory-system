@@ -45,11 +45,11 @@ describe('Phase 8 brutal', () => {
     expect(r.getByText('₹12,400')).toBeInTheDocument(); // 30 x avg 413.33
   });
 
-  it('ledger: admin edits FIRST movement qty 100->200; whole table recalculates', async () => {
+  it('admin ledger (/admin/ledger): admin edits FIRST movement qty 100->200; whole table recalculates', async () => {
     const api = await adminApi();
     const L = await seedLedger(api, 'ED');
     await session(ADMIN);
-    renderApp('/ledger');
+    renderApp('/admin/ledger');
     await pickMaterial(L.matId);
     await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
 
@@ -85,14 +85,25 @@ describe('Phase 8 brutal', () => {
     expect(screen.queryByText('Actions')).toBeNull();
   });
 
-  it('users: approve + reject pending signups; role toggle; self toggle disabled', async () => {
+  it('public ledger is view-only even for a logged-in admin (no Edit, no Actions column)', async () => {
+    const api = await adminApi();
+    const L = await seedLedger(api, 'PV');
+    await session(ADMIN);
+    renderApp('/ledger');
+    await pickMaterial(L.matId);
+    await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
+    expect(screen.queryByRole('button', { name: /^Edit movement/ })).toBeNull();
+    expect(screen.queryByText('Actions')).toBeNull();
+  });
+
+  it('admin users: approve + reject pending signups; role toggle; self toggle disabled', async () => {
     const api = await adminApi();
     const ok = { email: `${uid('a').toLowerCase()}@test.com`, name: 'To Approve' };
     const no = { email: `${uid('r').toLowerCase()}@test.com`, name: 'To Reject' };
     await as().post('/auth/signup', { ...ok, password: 'secret1' });
     await as().post('/auth/signup', { ...no, password: 'secret1' });
     const me = await session(ADMIN);
-    renderApp('/users');
+    renderApp('/admin/users');
 
     await userEvent.click(await screen.findByRole('button', { name: `Approve ${ok.email}` }));
     await waitFor(() => expect(screen.queryByRole('button', { name: `Approve ${ok.email}` })).toBeNull());
@@ -154,7 +165,7 @@ describe('Phase 8 brutal', () => {
     await session(ADMIN);
     renderApp('/');
     const nav = await screen.findByRole('navigation');
-    for (const t of ['Dashboard', 'Materials', 'Stock Movement', 'Ledger', 'Reports', 'Users']) expect(within(nav).getByRole('link', { name: t })).toBeInTheDocument();
+    for (const t of ['Dashboard', 'Materials', 'Stock Movement', 'Ledger', 'Reports', 'Admin']) expect(within(nav).getByRole('link', { name: t })).toBeInTheDocument();
     expect(within(nav).getByText(/Pratham Thatte/)).toBeInTheDocument();
     await userEvent.click(within(nav).getByRole('button', { name: 'Logout' }));
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
@@ -169,15 +180,23 @@ describe('Phase 8 break', () => {
     renderApp('/');
     const nav = await screen.findByRole('navigation');
     expect(within(nav).getByText('Normal Nancy')).toBeInTheDocument();
+    expect(within(nav).queryByRole('link', { name: 'Admin' })).toBeNull();
     expect(within(nav).queryByRole('link', { name: 'Users' })).toBeNull();
     for (const t of ['Dashboard', 'Materials', 'Stock Movement', 'Ledger', 'Reports']) expect(within(nav).getByRole('link', { name: t })).toBeInTheDocument();
   });
 
-  it('normal user hitting /users by URL is redirected to the dashboard', async () => {
+  it('normal user hitting /admin/users by URL is redirected to the dashboard', async () => {
     await session(await makeUser());
+    renderApp('/admin/users');
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Users' })).toBeNull();
+  });
+
+  it('the old /users URL no longer reaches anything, even for an admin', async () => {
+    await session(ADMIN);
     renderApp('/users');
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'User Approvals' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Users' })).toBeNull();
   });
 
   it('logged-out user hitting /users is sent to login', async () => {
@@ -185,11 +204,11 @@ describe('Phase 8 break', () => {
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
   });
 
-  it('ledger edit: invalid quantity blocked client-side; cancel leaves data alone', async () => {
+  it('admin ledger edit: invalid quantity blocked client-side; cancel leaves data alone', async () => {
     const api = await adminApi();
     const L = await seedLedger(api, 'BK');
     await session(ADMIN);
-    renderApp('/ledger');
+    renderApp('/admin/ledger');
     await pickMaterial(L.matId);
     await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
     await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: /^Edit movement/ }));
@@ -200,11 +219,11 @@ describe('Phase 8 break', () => {
     expect((await api.get(`/materials/${L.matId}`)).data.currentQuantity).toBe(120);
   });
 
-  it('ledger edit: saving without changes is clean (no edited flag, same numbers)', async () => {
+  it('admin ledger edit: saving without changes is clean (no edited flag, same numbers)', async () => {
     const api = await adminApi();
     const L = await seedLedger(api, 'NO');
     await session(ADMIN);
-    renderApp('/ledger');
+    renderApp('/admin/ledger');
     await pickMaterial(L.matId);
     await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
     await userEvent.click(within(rowOf(L.moves[1])).getByRole('button', { name: /^Edit movement/ }));
@@ -215,11 +234,11 @@ describe('Phase 8 break', () => {
     expect((await api.get(`/materials/${L.matId}`)).data.currentQuantity).toBe(120);
   });
 
-  it('ledger edit: changing IN->OUT recalculates and shows exceeded badge when stock runs short', async () => {
+  it('admin ledger edit: changing IN->OUT recalculates and shows exceeded badge when stock runs short', async () => {
     const api = await adminApi();
     const L = await seedLedger(api, 'TY');
     await session(ADMIN);
-    renderApp('/ledger');
+    renderApp('/admin/ledger');
     await pickMaterial(L.matId);
     await waitFor(() => expect(screen.queryAllByText(L.id)).toHaveLength(3));
     await userEvent.click(within(rowOf(L.moves[0])).getByRole('button', { name: /^Edit movement/ }));

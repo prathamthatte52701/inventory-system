@@ -27,6 +27,8 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/movements', require('./routes/movements'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/audit', require('./routes/audit'));
+app.use('/api/analytics', require('./routes/analytics'));
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars

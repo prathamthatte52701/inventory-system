@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { isId } = require('../middleware/fields');
 const User = require('../models/User');
+const Movement = require('../models/Movement');
 const audit = require('../utils/audit');
 
 exports.list = async (req, res, next) => {
@@ -43,6 +44,22 @@ exports.setRole = async (req, res, next) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
     await audit(req, 'USER_ROLE_CHANGE', 'User', user._id, { email: user.email, role: user.role });
     res.json(user);
+  } catch (e) {
+    next(e);
+  }
+};
+
+// small activity summary for the admin user panel
+exports.activity = async (req, res, next) => {
+  try {
+    if (!isId(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+    if (!(await User.exists({ _id: req.params.id }))) return res.status(404).json({ message: 'User not found' });
+    const filter = { createdBy: req.params.id };
+    const [movementCount, last] = await Promise.all([
+      Movement.countDocuments(filter),
+      Movement.findOne(filter).sort({ createdAt: -1 }).select('createdAt').lean(),
+    ]);
+    res.json({ movementCount, lastMovementAt: last ? last.createdAt : null });
   } catch (e) {
     next(e);
   }

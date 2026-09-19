@@ -47,10 +47,10 @@ describe('Phase 7 brutal', () => {
     expect(m.status).toBe('AVAILABLE');
   });
 
-  it('materials page: admin gets controls; can add, edit, deactivate via UI', async () => {
+  it('admin materials page (/admin/materials): can add, edit, deactivate via UI', async () => {
     await session(ADMIN);
     const id = uid('MAT');
-    renderApp('/materials');
+    renderApp('/admin/materials');
     await userEvent.click(await screen.findByRole('button', { name: 'Add Material' }));
     await type('Material ID', id.toLowerCase());
     await type('Description', 'UI Sand');
@@ -83,6 +83,17 @@ describe('Phase 7 brutal', () => {
     expect(screen.queryByRole('button', { name: 'Add Material' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Edit / })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Deactivate / })).toBeNull();
+    expect(screen.queryByText('Actions')).toBeNull();
+  });
+
+  it('public materials page is read-only even for a logged-in admin', async () => {
+    const api = await adminApi();
+    const id = uid('RA');
+    await api.post('/materials', { materialId: id, description: 'Admin Sees Readonly', unit: 'Nos' });
+    await session(ADMIN);
+    renderApp('/materials');
+    expect(await screen.findByText(id)).toBeInTheDocument();
+    for (const name of ['Add Material', /^Edit /, /^Deactivate /, /^Reactivate /]) expect(screen.queryByRole('button', { name })).toBeNull();
     expect(screen.queryByText('Actions')).toBeNull();
   });
 

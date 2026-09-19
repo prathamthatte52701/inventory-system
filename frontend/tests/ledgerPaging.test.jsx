@@ -45,8 +45,8 @@ describe('Ledger pagination', () => {
   }, 60000);
   beforeEach(() => session(ADMIN)); // afterEach logs the jsdom cookie jar out
 
-  it('reaches #201, #225, #250 via Next; edit on page 2 reloads same page with fresh balances', async () => {
-    renderApp('/ledger');
+  it('admin ledger: reaches #201, #225, #250 via Next; edit on page 2 reloads same page with fresh balances', async () => {
+    renderApp('/admin/ledger'); // corrections live here; the public /ledger is view-only
     await pick(A.matId);
     await row(A.moves[0]);
     expect(info()).toBe('Page 1 of 2 (250 total)');
@@ -64,6 +64,17 @@ describe('Ledger pagination', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect((screen.getByTestId(`row-${A.moves[249]._id}`)).textContent).toContain('254'));
     expect(info()).toBe('Page 2 of 2 (250 total)');
+  }, 60000);
+
+  it('public ledger pages through all 250 rows too and never shows edit controls, even to an admin', async () => {
+    renderApp('/ledger');
+    await pick(A.matId);
+    await row(A.moves[0]);
+    expect(info()).toBe('Page 1 of 2 (250 total)');
+    await next();
+    expect(await row(A.moves[249])).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Edit movement/ })).toBeNull();
+    expect(screen.queryByText('Actions')).toBeNull();
   }, 60000);
 
   it('filter change resets to page 1 and re-paginates another material', async () => {
@@ -109,7 +120,7 @@ describe('Ledger pagination', () => {
   }, 60000);
 
   it('regression: fetch sends page and consumes totalPages (no bare limit:200 truncation)', () => {
-    const src = fs.readFileSync(path.resolve(__dirname, '../src/pages/Ledger.jsx'), 'utf8');
+    const src = fs.readFileSync(path.resolve(__dirname, '../src/components/LedgerTable.jsx'), 'utf8');
     expect(src).toMatch(/params:\s*\{[^}]*\bpage\b/);
     expect(src).toMatch(/totalPages/);
   });

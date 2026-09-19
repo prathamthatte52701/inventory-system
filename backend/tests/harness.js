@@ -19,6 +19,7 @@ module.exports = async function setup(label) {
   await mongoose.connection.dropDatabase();
   await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
   const server = app.listen(0);
+  server.keepAliveTimeout = 60000; // node default 5s races undici keep-alive reuse -> spurious ECONNRESET under load
   base = `http://127.0.0.1:${server.address().port}/api`;
 
   const h = {
