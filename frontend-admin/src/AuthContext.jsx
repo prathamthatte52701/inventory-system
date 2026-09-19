@@ -38,9 +38,10 @@ export function AuthProvider({ children }) {
       throw new Error(NOT_ADMIN_MSG);
     }
     setDenied(false);
-    setUser(data.user);
+    const u = publicUser(data.user);
+    setUser(u);
     setReady(true);
-    return data.user;
+    return u;
   };
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch { /* server clears the cookie on success */ }
