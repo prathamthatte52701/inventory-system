@@ -51,6 +51,14 @@ async function recalculate(material) {
   return material;
 }
 
+// Pure replay (no database): walks `moves` (already in ORDER, each { type, quantity, enteredRate }) from the material's
+// opening baseline with the same apply() the engine uses, and returns each step's { balanceAfter, rate, amount, exceededStock }.
+// Used to preview what posting would do (import preview) without writing anything.
+function replay(material, moves) {
+  let state = { qty: material.openingQuantity, rate: material.openingRate };
+  return moves.map((m) => { const r = apply(state, m); state = r.state; return r.movement; });
+}
+
 // Posts one movement for a material, refusing any OUT that would drive stock negative. MUST be called inside withLock.
 // Shared by movement create and by the correction flow, so the rule lives in exactly one place.
 //   live entry (nothing dated after it): checked against the current balance before anything is written
@@ -150,4 +158,4 @@ function withLock(key, fn) {
   return run;
 }
 
-module.exports = { apply, recalculate, postMovement, withLock, lockConfig, ORDER, round };
+module.exports = { apply, replay, recalculate, postMovement, withLock, lockConfig, ORDER, round };

@@ -3,7 +3,7 @@ const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const Material = require('../models/Material');
 const Movement = require('../models/Movement');
-const { ORDER } = require('../utils/costing');
+const { ORDER, apply } = require('../utils/costing');
 const { httpError, wrap } = require('../utils/errors');
 
 const STATUS = { AVAILABLE: 'Available', LOW_STOCK: 'Low Stock', OUT_OF_STOCK: 'Out of Stock' };
@@ -124,4 +124,53 @@ exports.movementsExcel = wrap(async (req, res) => {
     desc: m.material && m.material.description, type: m.type, qty: m.quantity, rate: m.rate,
     amount: m.amount, bal: m.balanceAfter, by: m.createdBy && m.createdBy.name, note: m.note || '',
   })));
+}, 'report export failed');
+
+// Daily per-material summary. "Day" is the UTC day [dayStart, dayStart + 1 day): imports store movementDate at UTC
+// midnight and manual entries store real timestamps, so the UTC day is the one consistent boundary.
+// Receipt = IN only, Issue = OUT only. RETURN adds stock but is in neither column; it shows up only in Balance vs
+// Opening (so Opening + Receipt - Issue can differ from Balance by the day's returns/reversals).
+// One streamed pass over movements before day end, in (material, ORDER) index order; memory is O(materials), not O(movements).
+// Rate = running weighted-average rate at end of day, replayed with the same apply() as the costing engine.
+exports.dailySummaryExcel = wrap(async (req, res) => {
+  const { date } = req.query;
+  const dayStart = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + 'T00:00:00.000Z') : null;
+  if (!dayStart || Number.isNaN(+dayStart) || dayStart.toISOString().slice(0, 10) !== date) throw httpError(400, 'date is required as a valid YYYY-MM-DD');
+  const dayEnd = new Date(+dayStart + 86400000);
+
+  const mats = await Material.find({ isActive: true }).sort({ materialId: 1 }).lean();
+  const st = new Map(mats.map((m) => [String(m._id), {
+    open: m.openingQuantity, close: m.openingQuantity, receipt: 0, issue: 0,
+    s: { qty: m.openingQuantity, rate: m.openingRate },
+  }]));
+  const cursor = Movement.find({ movementDate: { $lt: dayEnd } })
+    .sort({ material: 1, ...ORDER }).select('material type quantity enteredRate balanceAfter movementDate').lean().cursor({ batchSize: BATCH });
+  try {
+    for await (const mv of cursor) {
+      const x = st.get(String(mv.material));
+      if (!x) continue; // inactive or deleted material
+      x.s = apply(x.s, mv).state;
+      x.close = mv.balanceAfter;
+      if (mv.movementDate < dayStart) x.open = mv.balanceAfter;
+      else if (mv.type === 'IN') x.receipt += mv.quantity;
+      else if (mv.type === 'OUT') x.issue += mv.quantity;
+    }
+  } finally { await cursor.close().catch(() => {}); }
+
+  const rows = (function* () {
+    for (const m of mats) {
+      const x = st.get(String(m._id));
+      yield {
+        id: m.materialId, size: m.description, rate: x.s.rate, open: x.open,
+        receipt: Math.round(x.receipt * 1e4) / 1e4, issue: Math.round(x.issue * 1e4) / 1e4, bal: x.close,
+        status: STATUS[x.close <= 0 ? 'OUT_OF_STOCK' : x.close <= m.minimumQuantity ? 'LOW_STOCK' : 'AVAILABLE'],
+      };
+    }
+  })();
+  await streamWorkbook(res, `daily-summary-${date}.xlsx`, 'Daily Summary', [
+    { header: 'EDP No', key: 'id', width: 16 }, { header: 'Size', key: 'size', width: 32 },
+    { header: 'Rate', key: 'rate', width: 12 }, { header: 'Opening', key: 'open', width: 12 },
+    { header: 'Receipt', key: 'receipt', width: 12 }, { header: 'Issue', key: 'issue', width: 12 },
+    { header: 'Balance', key: 'bal', width: 12 }, { header: 'Status', key: 'status', width: 14 },
+  ], rows);
 }, 'report export failed');

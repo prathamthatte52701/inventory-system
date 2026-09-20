@@ -1,0 +1,143 @@
+const multer = require('multer');
+const Material = require('../models/Material');
+const ImportBatch = require('../models/ImportBatch');
+const audit = require('../utils/audit');
+const { withLock } = require('../utils/costing');
+const { createMovementLocked } = require('../utils/movementService');
+const { parseXlsx, parseDocx } = require('../utils/importParse');
+const { buildPlan, isDuplicate } = require('../utils/importPlan');
+const { parseNum } = require('../middleware/fields');
+const { httpError, wrap } = require('../utils/errors');
+const { paginate, pageEnvelope } = require('../utils/pagination');
+
+const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_ITEMS = 5000;
+const uploadOne = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES, files: 1 } }).single('file');
+const receive = (req, res) => new Promise((resolve, reject) => uploadOne(req, res, (e) => {
+  if (!e) return resolve();
+  reject(httpError(400, e.code === 'LIMIT_FILE_SIZE' ? 'File is too large (max 10 MB)' : `Upload failed: ${e.message}`));
+}));
+
+exports.preview = wrap(async (req, res) => {
+  await receive(req, res);
+  const f = req.file;
+  if (!f) throw httpError(400, 'No file uploaded (send it as multipart field "file")');
+  const name = f.originalname || 'upload';
+  const ext = (/\.([^.]+)$/.exec(name) || [])[1]?.toLowerCase();
+  if (ext === 'xls') throw httpError(400, 'Legacy .xls files cannot be read. Please re-save the file as .xlsx (Excel Workbook) and upload it again.');
+  if (ext !== 'xlsx' && ext !== 'docx') throw httpError(400, 'Unsupported file type. Upload an .xlsx (or .docx) file.');
+  const { rows, errors } = await (ext === 'xlsx' ? parseXlsx : parseDocx)(f.buffer);
+  res.json({ filename: name.slice(0, 255), ...(await buildPlan(rows, errors)) });
+});
+
+const validDay = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(s).getTime()) && new Date(s).toISOString().slice(0, 10) === s;
+
+// Returns a clean movement or a string describing why it is invalid. The client's `status` is never read.
+function cleanMovement(m) {
+  if (!m || typeof m !== 'object') return 'Invalid movement';
+  if (m.type !== 'IN' && m.type !== 'OUT') return 'type must be IN or OUT';
+  if (!Number.isInteger(m.row) || m.row < 1) return 'row must be a positive whole number';
+  if (typeof m.edp !== 'string' || !m.edp.trim()) return 'EDP is missing';
+  const quantity = parseNum(m.quantity, { min: 0.0001 });
+  if (Number.isNaN(quantity)) return 'quantity must be a positive number';
+  let enteredRate = null;
+  if (m.type === 'IN') {
+    enteredRate = m.rate === null || m.rate === undefined || m.rate === '' ? NaN : parseNum(m.rate);
+    if (Number.isNaN(enteredRate)) return 'IN requires a rate';
+  }
+  if (!validDay(m.movementDate)) return 'movementDate must be YYYY-MM-DD';
+  return { row: m.row, edp: m.edp.trim().toUpperCase(), type: m.type, quantity, enteredRate, movementDate: new Date(m.movementDate) };
+}
+
+function cleanMaterial(m) {
+  if (!m || typeof m.edp !== 'string' || !m.edp.trim()) return null;
+  const openingQuantity = m.openingQuantity === undefined ? 0 : parseNum(m.openingQuantity);
+  const openingRate = m.openingRate === undefined ? 0 : parseNum(m.openingRate);
+  if (Number.isNaN(openingQuantity) || Number.isNaN(openingRate)) return null;
+  const edp = m.edp.trim().toUpperCase();
+  return { edp, description: String(m.description || edp).trim().slice(0, 200) || edp, openingQuantity, openingRate };
+}
+
+exports.commit = wrap(async (req, res) => {
+  const b = req.body;
+  if (!Array.isArray(b.movements) || b.movements.length > MAX_ITEMS) throw httpError(400, `movements must be an array of at most ${MAX_ITEMS}`);
+  if (b.materials !== undefined && (!Array.isArray(b.materials) || b.materials.length > MAX_ITEMS)) throw httpError(400, `materials must be an array of at most ${MAX_ITEMS}`);
+  const filename = typeof b.filename === 'string' && b.filename.trim() ? b.filename.trim().slice(0, 255) : 'import';
+
+  // 1. validate everything
+  const results = [];
+  const items = [];
+  b.movements.forEach((raw, i) => {
+    const c = cleanMovement(raw);
+    const row = raw && Number.isInteger(raw.row) ? raw.row : null;
+    const id = raw && typeof raw.id === 'string' ? raw.id.slice(0, 40) : `r${row}-${raw && raw.type}`;
+    const r = { id, row, edp: raw && typeof raw.edp === 'string' ? raw.edp.trim().toUpperCase() : null, type: raw ? raw.type : null };
+    results[i] = r;
+    if (typeof c === 'string') { r.status = 'failed'; r.reason = c; } else items.push({ ...c, r });
+  });
+
+  // 2. materials: create the still-missing ones from the plan
+  const wanted = new Map();
+  for (const raw of b.materials || []) { const m = cleanMaterial(raw); if (m && !wanted.has(m.edp)) wanted.set(m.edp, m); }
+  const have = new Map((await Material.find({ materialId: { $in: [...new Set([...wanted.keys(), ...items.map((x) => x.edp)])] } })).map((m) => [m.materialId, m]));
+  const createdMaterials = [];
+  for (const m of wanted.values()) {
+    if (have.has(m.edp)) continue;
+    try {
+      const doc = await Material.create({ // current* start equal to opening, exactly like POST /materials
+        materialId: m.edp, description: m.description, unit: 'TBD', openingQuantity: m.openingQuantity, openingRate: m.openingRate,
+        currentQuantity: m.openingQuantity, currentRate: m.openingRate, createdBy: req.user._id,
+      });
+      have.set(m.edp, doc);
+      createdMaterials.push({ materialId: doc.materialId, description: doc.description, unit: doc.unit });
+    } catch (e) {
+      if (e.code !== 11000) throw e;
+      have.set(m.edp, await Material.findOne({ materialId: m.edp })); // created concurrently: use theirs
+    }
+  }
+
+  // 3. post per material, oldest first, holding that material's lock once
+  const groups = new Map();
+  for (const it of items) {
+    const mat = have.get(it.edp);
+    if (!mat) { it.r.status = 'failed'; it.r.reason = 'Unknown material'; continue; }
+    if (mat.isActive === false) { it.r.status = 'failed'; it.r.reason = 'Material is inactive'; continue; }
+    if (!groups.has(it.edp)) groups.set(it.edp, []);
+    groups.get(it.edp).push(it);
+  }
+  for (const [edp, list] of groups) {
+    list.sort((a, c) => a.movementDate - c.movementDate || a.row - c.row || (a.type === c.type ? 0 : a.type === 'IN' ? -1 : 1));
+    const matId = have.get(edp)._id;
+    await withLock(String(matId).toLowerCase(), async () => {
+      for (const it of list) {
+        try {
+          if (await isDuplicate(matId, it)) { it.r.status = 'skipped-duplicate'; it.r.reason = 'Identical movement already exists'; continue; }
+          const out = await createMovementLocked(matId, {
+            type: it.type, quantity: it.quantity, enteredRate: it.enteredRate, movementDate: it.movementDate,
+            note: `Imported: ${filename} (row ${it.row})`.slice(0, 500), createdBy: req.user._id,
+          });
+          it.r.status = 'created'; it.r.balanceAfter = out.movement.balanceAfter;
+        } catch (e) {
+          it.r.status = 'failed'; it.r.reason = e.status ? e.message : 'Could not record this movement';
+          if (!e.status) console.error('[import commit]', e.message);
+        }
+      }
+    }).catch((e) => { // e.g. lock busy: everything still pending for this material failed
+      for (const it of list) if (!it.r.status) { it.r.status = 'failed'; it.r.reason = e.status ? e.message : 'Could not record this movement'; }
+    });
+  }
+
+  // 4. one metadata doc + one audit entry
+  const count = (s) => results.filter((r) => r.status === s).length;
+  const summary = { rowCount: new Set(results.map((r) => r.row)).size, created: count('created'), skipped: count('skipped-duplicate'), failed: count('failed'), newMaterials: createdMaterials.length };
+  const batch = await ImportBatch.create({ filename, uploadedBy: req.user._id, rowCount: summary.rowCount, createdCount: summary.created, skippedCount: summary.skipped, rejectedCount: summary.failed });
+  await audit(req, 'IMPORT_COMMIT', 'ImportBatch', batch._id, { filename, createdCount: summary.created, skippedCount: summary.skipped, rejectedCount: summary.failed });
+  res.json({ batchId: batch._id, filename, summary, createdMaterials, results });
+});
+
+exports.list = wrap(async (req, res) => {
+  const pg = paginate(req.query);
+  const total = await ImportBatch.countDocuments();
+  const data = pg.skip >= total ? [] : await ImportBatch.find().sort({ uploadedAt: -1, _id: -1 }).skip(pg.skip).limit(pg.limit).populate('uploadedBy', 'name').lean();
+  res.json(pageEnvelope(data.map((d) => ({ _id: d._id, filename: d.filename, uploadedBy: d.uploadedBy ? { _id: d.uploadedBy._id, name: d.uploadedBy.name } : null, uploadedAt: d.uploadedAt, rowCount: d.rowCount, createdCount: d.createdCount, skippedCount: d.skippedCount, rejectedCount: d.rejectedCount })), pg, total));
+});

@@ -5,6 +5,7 @@ const { recalculate, postMovement, withLock, ORDER } = require('../utils/costing
 const { parseNum, isId } = require('../middleware/fields');
 const { httpError, wrap } = require('../utils/errors');
 const { paginate, pageEnvelope } = require('../utils/pagination');
+const { createMovement } = require('../utils/movementService');
 
 const validRate = (v) => !Number.isNaN(parseNum(v));
 // body may send the paid rate as enteredRate or rate; only ever honoured for IN
@@ -20,12 +21,7 @@ exports.create = wrap(async (req, res) => {
   }
   const movementDate = req.body.movementDate ? new Date(req.body.movementDate) : new Date();
 
-  const out = await withLock(String(materialId).toLowerCase(), async () => { // same key whatever the hex case
-    const material = await Material.findById(materialId);
-    if (!material || !material.isActive) throw httpError(404, 'Material not found or inactive');
-
-    return postMovement(material, { type, quantity, enteredRate, movementDate, note, createdBy: req.user._id });
-  });
+  const out = await createMovement(materialId, { type, quantity, enteredRate, movementDate, note, createdBy: req.user._id });
 
   await audit(req, 'MOVEMENT_CREATE', 'Movement', out.movement._id, {
     material: out.material.materialId, type, quantity, amount: out.movement.amount,

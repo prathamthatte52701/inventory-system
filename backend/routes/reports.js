@@ -7,5 +7,6 @@ router.get('/dashboard', c.dashboard);
 router.get('/stock-value/excel', c.stockExcel);
 router.get('/stock-value/pdf', c.stockPdf);
 router.get('/movements/excel', c.movementsExcel);
+router.get('/daily-summary', c.dailySummaryExcel);
 
 module.exports = router;

@@ -13,6 +13,7 @@ app.use(cors({
   exposedHeaders: ['Content-Disposition', 'Retry-After'], // readable by a cross-origin frontend
 }));
 app.use(cookieParser());
+app.use('/api/imports', require('./middleware/auth').requireAuth, express.json({ limit: '5mb' })); // authenticate before buffering a large body // a ~350-row import plan exceeds the default; body-parser skips already-parsed bodies
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => { // express 5 leaves req.body undefined when no JSON was sent; controllers expect an object
   if (req.body === undefined) req.body = {};
@@ -26,6 +27,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/movements', require('./routes/movements'));
+app.use('/api/imports', require('./routes/imports'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/analytics', require('./routes/analytics'));
