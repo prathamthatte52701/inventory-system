@@ -51,7 +51,10 @@ describe('Round 4 · empty required fields', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/required/i);
     await type('Name', 'A'); await type('Email', 'a@test.com'); await type('Password', '123');
     await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/at least 6/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Name must be 3-48/i); // first failing rule
+    await type('Name', 'Abe');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Password must be 8-32/i);
     expect(calls(spy, '/auth/signup')).toBe(0);
   });
 
