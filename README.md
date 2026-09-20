@@ -48,7 +48,7 @@ An automated inventory system for a single location. It records material movemen
 | **Materials search** | The Materials page filters live by Material ID or description (case-insensitive) and by stock status (All / Available / Low Stock / Out of Stock); the two filters combine. |
 | **Dashboard** | Total materials, total stock value, low-stock and out-of-stock counts, per-material status. |
 | **Stock import** | Any logged-in user uploads an Excel (`.xlsx`) or Word (`.docx`, best effort) stock sheet, reviews a **preview** (nothing is written yet), fixes what can be fixed, then commits. See *Stock import* below. |
-| **Reports** | Stock-value Excel + PDF, movement-history Excel (filter by material and date range), and a **daily per-material stock summary** (date picker on Reports, one-click button on the Dashboard). |
+| **Reports** | Stock-value (valuation) Excel + PDF, **Low Stock** and **Out of Stock** Excel lists, movement-history Excel (filter by material and date range), and a **daily per-material stock summary** (date picker on Reports, one-click button on the Dashboard). |
 | **Admin tools** | Approve/reject signups, promote/demote users, audit log of every write. |
 
 ## How it works
@@ -296,6 +296,8 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 | `PUT` | `/movements/:id` | admin | Correction: posts a reversal + a corrected entry and marks the original as corrected. Body fields (`type`, `quantity`, `enteredRate`, `movementDate`, `note`) default to the original's. Returns `{ original, reversal, corrected, material }`. `400` if the original was already corrected, is itself a reversal/correction, or either new entry would make stock negative (nothing is left behind). Audited as `MOVEMENT_CORRECTION`. |
 | `GET` | `/reports/dashboard` | approved | |
 | `GET` | `/reports/stock-value/excel` · `/pdf` | approved | File download. |
+| `GET` | `/reports/stock/low-stock/excel` | approved | Same columns as stock value, only materials with `0 < qty <= minimum`. |
+| `GET` | `/reports/stock/out-of-stock/excel` | approved | Same columns, only materials with `qty <= 0`. |
 | `GET` | `/reports/movements/excel?material=&from=&to=` | approved | Date-only `to` is inclusive. |
 | `GET` | `/reports/daily-summary?date=YYYY-MM-DD` | approved | Every active material, with that day's Receipt / Issue and closing Balance. |
 | `POST` | `/imports/preview` | approved | Multipart, field `file` (`.xlsx` / `.docx`). Returns the plan; writes nothing. |
@@ -324,6 +326,7 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 | Corrections | `backend/tests/corrections.test.js` | Reversal + corrected entry for IN/OUT/RETURN, original frozen, single-correction rule, no partial state on failure, audit trail, replay agrees with stored values |
 | Materials filter | `frontend/tests/materialsFilter.test.jsx` | ID / description / status filters, AND-combination, no-match state and clearing |
 | Stock import | `backend/tests/import.test.js` | Mixed-file classification, duplicates, re-upload, OUT rejection, back-dated parity with manual entry, TBD materials, Word success/failure, partial re-validated commit, audit + batch record, access |
+| Low / Out of Stock lists | `backend/tests/stockLists.test.js`, `frontend/tests/stockLists.test.jsx` | Boundaries match the status virtual, inactive excluded, empty workbook, live stock changes, buttons download only their own list |
 | Daily report | `backend/tests/dailyReport.test.js` | Summed Receipt/Issue, materials with no movement that day, inactive excluded, empty days, RETURN handling |
 | Import page / daily report UI | `frontend/tests/import.test.jsx`, `frontend/tests/dailyReport.test.jsx` | Preview rows and statuses, inline rate fix, commit rule, server-side result summary, date-picker download |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |

@@ -38,11 +38,13 @@ export default function Reports() {
       <PageHeader title="Reports" description="Download stock and movement data as Excel or PDF." />
       <div className="grid gap-5">
         <Card className="p-5">
-          <CardTitle>Stock value</CardTitle>
-          <p className="mb-4 mt-1 text-sm text-muted">Current quantity, rate and value of every active material.</p>
+          <CardTitle>Stock Value / Valuation Report</CardTitle>
+          <p className="mb-4 mt-1 text-sm text-muted">Current quantity, rate and value of every active material (the Stock Valuation report). Low Stock and Out of Stock lists are one click away.</p>
           <div className="flex flex-wrap gap-3">
             <Button disabled={busy} onClick={() => download('/reports/stock-value/excel')}><FileSpreadsheet className="h-4 w-4 text-ok" aria-hidden="true" />Download Stock Value (Excel)</Button>
             <Button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}><FileText className="h-4 w-4 text-err" aria-hidden="true" />Download Stock Value (PDF)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/stock/low-stock/excel')}><FileSpreadsheet className="h-4 w-4 text-warn" aria-hidden="true" />Download Low Stock (Excel)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/stock/out-of-stock/excel')}><FileSpreadsheet className="h-4 w-4 text-err" aria-hidden="true" />Download Out of Stock (Excel)</Button>
           </div>
         </Card>
         <Card className="p-5">

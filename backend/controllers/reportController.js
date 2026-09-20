@@ -48,18 +48,34 @@ const BATCH = 500;
 async function* cursorRows(cursor, map) {
   try { for await (const doc of cursor) yield map(doc); } finally { await cursor.close().catch(() => {}); }
 }
-const activeMaterialCursor = () => Material.find({ isActive: true }).sort({ materialId: 1 }).cursor({ batchSize: BATCH });
+const activeMaterialCursor = (extra = {}) => Material.find({ isActive: true, ...extra }).sort({ materialId: 1 }).cursor({ batchSize: BATCH });
+
+// One definition of what a stock-report row looks like, shared by Stock Value, Low Stock and Out of Stock.
+const STOCK_COLUMNS = [
+  { header: 'Material ID', key: 'id', width: 16 }, { header: 'Description', key: 'desc', width: 32 },
+  { header: 'Unit', key: 'unit', width: 10 }, { header: 'Current Qty', key: 'qty', width: 14 },
+  { header: 'Rate', key: 'rate', width: 12 }, { header: 'Stock Value', key: 'value', width: 16 },
+  { header: 'Status', key: 'status', width: 14 },
+];
+const stockRow = (m) => ({
+  id: m.materialId, desc: m.description, unit: m.unit, qty: m.currentQuantity,
+  rate: m.currentRate, value: m.stockValue, status: STATUS[m.status],
+});
+const streamStockReport = (res, filename, sheetName, extra) =>
+  streamWorkbook(res, filename, sheetName, STOCK_COLUMNS, cursorRows(activeMaterialCursor(extra), stockRow));
 
 exports.stockExcel = wrap(async (req, res) => {
-  await streamWorkbook(res, `stock-value-${stamp()}.xlsx`, 'Stock Value', [
-    { header: 'Material ID', key: 'id', width: 16 }, { header: 'Description', key: 'desc', width: 32 },
-    { header: 'Unit', key: 'unit', width: 10 }, { header: 'Current Qty', key: 'qty', width: 14 },
-    { header: 'Rate', key: 'rate', width: 12 }, { header: 'Stock Value', key: 'value', width: 16 },
-    { header: 'Status', key: 'status', width: 14 },
-  ], cursorRows(activeMaterialCursor(), (m) => ({
-    id: m.materialId, desc: m.description, unit: m.unit, qty: m.currentQuantity,
-    rate: m.currentRate, value: m.stockValue, status: STATUS[m.status],
-  })));
+  await streamStockReport(res, `stock-value-${stamp()}.xlsx`, 'Stock Value');
+}, 'report export failed');
+
+// Same boundaries as the Material `status` virtual: <= 0 is out of stock, otherwise <= minimumQuantity is low stock.
+exports.lowStockExcel = wrap(async (req, res) => {
+  await streamStockReport(res, `low-stock-${stamp()}.xlsx`, 'Low Stock',
+    { currentQuantity: { $gt: 0 }, $expr: { $lte: ['$currentQuantity', '$minimumQuantity'] } });
+}, 'report export failed');
+
+exports.outOfStockExcel = wrap(async (req, res) => {
+  await streamStockReport(res, `out-of-stock-${stamp()}.xlsx`, 'Out of Stock', { currentQuantity: { $lte: 0 } });
 }, 'report export failed');
 
 exports.stockPdf = wrap(async (req, res) => {
