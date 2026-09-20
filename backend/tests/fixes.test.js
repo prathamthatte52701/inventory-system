@@ -389,12 +389,12 @@ const MIN = 60 * 1000;
       assert(!('lockedUntil' in o) && !('lockToken' in o));
   });
   await t('F4 lock is released after success and after a failure inside the critical section', async () => {
-    const m = await h.newMaterial('LK1');
+    const m = await h.newMaterial('LK1', { openingQuantity: 5, openingRate: 3 }); // OUT beyond stock is rejected, so give it stock
     const r = await h.move(m, 'OUT', 1); is(r, 201);
     let d = await lockDoc(m); assert(!d.lockedUntil && !d.lockToken, 'not released after success');
     is(await call('PUT', `/movements/${r.b.movement._id}`, { type: 'IN' }, A), 400); // throws inside the lock (IN needs a rate)
     d = await lockDoc(m); assert(!d.lockedUntil && !d.lockToken, 'not released after an error');
-    is(await call('PUT', `/materials/${m}`, { openingQuantity: 5 }, A), 409); // 409 opening edit blocked, also inside the lock
+    is(await call('PUT', `/materials/${m}`, { openingQuantity: 6 }, A), 409); // 409 opening edit blocked, also inside the lock
     d = await lockDoc(m); assert(!d.lockedUntil && !d.lockToken, 'not released after a 409');
     is(await h.move(m, 'RETURN', 1), 201);
   });
@@ -497,7 +497,9 @@ const MIN = 60 * 1000;
       childCall('PUT', `/movements/${first}`, { enteredRate: 15 }, A),
       call('POST', '/movements', { material: m, type: 'RETURN', quantity: 3, movementDate: '2026-03-02' }, U),
     ]);
-    rs.forEach((r) => assert([200, 201].includes(r.s), 'status ' + r.s));
+    assert.deepStrictEqual([rs[1].s, rs[3].s], [201, 201]);
+    assert.deepStrictEqual([rs[0].s, rs[2].s].sort(), [200, 400], 'two racing corrections of one movement: exactly one wins (an original is corrected once)');
+    assert.strictEqual(await Movement.countDocuments({ material: m, isReversal: true }), 1);
     await chainOk(m, 'edit-vs-post');
   });
 

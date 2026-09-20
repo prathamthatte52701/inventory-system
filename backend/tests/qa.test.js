@@ -351,9 +351,18 @@ function oracle(opening, ms) {
     for (let i = 0; i < 20; i++) jobs.push(() => h.move(m, 'OUT', 1 + (i % 4), undefined, { movementDate: `2026-02-${String(3 + (i % 9)).padStart(2, '0')}` }));
     for (let i = 0; i < 8; i++) jobs.push(() => h.move(m, 'IN', 5 + i, 10 + i, { movementDate: `2026-02-${String(1 + (i % 10)).padStart(2, '0')}` })); // some back-dated
     for (let i = 0; i < 6; i++) jobs.push(() => h.move(m, 'RETURN', 2, undefined, { movementDate: `2026-02-${String(4 + i).padStart(2, '0')}` }));
+    // corrections race each other: two on `first` (exactly one may win), one on `second`
     jobs.push(() => call('PUT', `/movements/${first}`, { quantity: 140 }, A), () => call('PUT', `/movements/${second}`, { enteredRate: 33 }, A), () => call('PUT', `/movements/${first}`, { note: 'x' }, A));
+    const before = await Movement.find({ _id: { $in: [first, second] } }).lean();
     const res = await Promise.all(jobs.map((j) => j()));
-    res.forEach((r, i) => assert([200, 201].includes(r.s), `job ${i} -> ${r.s} ${JSON.stringify(r.b)}`));
+    const n = res.length;
+    res.slice(0, n - 3).forEach((r, i) => assert.strictEqual(r.s, 201, `job ${i} -> ${r.s} ${JSON.stringify(r.b)}`));
+    const [c1, c2, c3] = res.slice(n - 3);
+    is(c2, 200);
+    assert.deepStrictEqual([c1.s, c3.s].sort(), [200, 400], 'exactly one of two racing corrections of the same movement wins');
+    const after = await Movement.find({ _id: { $in: [first, second] } }).lean();
+    before.forEach((b0) => { const a1 = after.find((x) => String(x._id) === String(b0._id)); for (const k of ['type', 'quantity', 'enteredRate', 'movementDate', 'note']) assert.deepStrictEqual(a1[k], b0[k], 'original ' + k + ' rewritten'); assert(a1.isEdited); });
+    assert.strictEqual(await Movement.countDocuments({ material: m, isReversal: true }), 2); // one reversal per successful correction
     await chainOk(m, 'concmix');
   });
   await t('R2 opening-value edit racing a movement never leaves inconsistent stock', async () => {
@@ -367,11 +376,11 @@ function oracle(opening, ms) {
 
   // ============================================================ ROUND 3: integrity under chaos
   const enteredSent = new Map();
-  const r3 = await h.newMaterial('R3CHAOS', { description: 'Chaos', unit: 'Nos', openingQuantity: 50, openingRate: 10, minimumQuantity: 20 });
-  const spec = [['2026-03-10', 'IN', 100, 12], ['2026-03-05', 'OUT', 30], ['2026-03-20', 'IN', 40, 9], ['2026-03-01', 'RETURN', 5], ['2026-03-15', 'OUT', 200], ['2026-03-12', 'IN', 60, 15],
+  const r3 = await h.newMaterial('R3CHAOS', { description: 'Chaos', unit: 'Nos', openingQuantity: 200, openingRate: 10, minimumQuantity: 20 });
+  const spec = [['2026-03-10', 'IN', 100, 12], ['2026-03-05', 'OUT', 30], ['2026-03-20', 'IN', 40, 9], ['2026-03-01', 'RETURN', 5], ['2026-03-15', 'OUT', 20], ['2026-03-12', 'IN', 60, 15],
     ['2026-03-25', 'RETURN', 10], ['2026-03-08', 'OUT', 20], ['2026-03-18', 'IN', 25, 11], ['2026-03-22', 'OUT', 15], ['2026-03-03', 'IN', 10, 20], ['2026-03-28', 'OUT', 5],
     ['2026-03-14', 'RETURN', 12], ['2026-03-30', 'IN', 50, 10], ['2026-03-11', 'OUT', 40], ['2026-03-27', 'IN', 8, 13], ['2026-03-10', 'OUT', 3], ['2026-03-10', 'IN', 7, 14], ['2026-03-31', 'OUT', 7]];
-  const ids = [];
+  const ids = [], snap = new Map();
   await t(`R3 ${spec.length} movements inserted out of order (incl. same-day ties): chain exact after EVERY insert`, async () => {
     for (const [d, type, q, rate] of spec) {
       const r = await h.move(r3, type, q, rate, { movementDate: d }); is(r, 201);
@@ -380,60 +389,84 @@ function oracle(opening, ms) {
     }
     const { ms } = await chainOk(r3, 'all');
     assert.strictEqual(ms.length, spec.length);
-    assert(ms.some((m) => m.exceededStock) && ms.some((m) => m.balanceAfter < 0), 'scenario should include negative stock');
+    for (const m of ms) snap.set(m._id, [m.type, m.quantity, m.enteredRate, m.movementDate, m.note]);
+    assert(!ms.some((m) => m.exceededStock) && !ms.some((m) => m.balanceAfter < 0), 'OUT-over-stock is rejected, so the ledger never goes negative');
   });
 
   const beforeEnteredCheck = async (label, editedId) => {
     const { ms } = await chainOk(r3, label);
     for (const m of ms) {
-      if (m.type === 'IN') assert.strictEqual(m.enteredRate, enteredSent.get(m._id), `${label}: enteredRate of ${m._id} corrupted`);
+      if (enteredSent.has(m._id)) assert.strictEqual(m.enteredRate, enteredSent.get(m._id), `${label}: enteredRate of ${m._id} corrupted`);
       assert.strictEqual(m.isEdited, editedSet.has(m._id), `${label}: isEdited flag on ${m._id}`);
+      const s0 = snap.get(m._id); // originals are never rewritten
+      if (s0) assert.deepStrictEqual([m.type, m.quantity, m.enteredRate, m.movementDate, m.note], s0, `${label}: original ${m._id} was rewritten`);
     }
+    assert(!ms.some((m) => m.balanceAfter < 0), label + ': went negative');
     assert(ms.find((m) => m._id === editedId));
     return ms;
   };
   const editedSet = new Set();
-  const mid = ids[spec.findIndex(([d, t2]) => d === '2026-03-10' && t2 === 'IN')]; // first 03-10 IN = middle of history
-  await t('R3 edit #1 (middle IN quantity 100 -> 150): every balance/rate/enteredRate/current still exact', async () => {
-    is(await call('PUT', `/movements/${mid}`, { quantity: 150 }, A), 200); editedSet.add(mid);
+  const idOf = (d, ty, q) => ids[spec.findIndex(([d2, t2, q2]) => d2 === d && t2 === ty && (q === undefined || q2 === q))];
+  const correct = async (id, body) => {
+    const n0 = (await call('GET', `/movements?material=${r3}`, undefined, U)).b.length;
+    const r = await call('PUT', `/movements/${id}`, body, A); is(r, 200); editedSet.add(id);
+    assert.strictEqual((await call('GET', `/movements?material=${r3}`, undefined, U)).b.length, n0 + 2); // reversal + corrected
+    assert(r.b.reversal.isReversal && !r.b.corrected.isReversal && String(r.b.reversal.correctionOf) === id && String(r.b.corrected.correctionOf) === id);
+    return r.b;
+  };
+  const mid = idOf('2026-03-10', 'IN'); // first 03-10 IN = middle of history
+  await t('R3 correction #1 (middle IN quantity 100 -> 150): original frozen, every balance/rate/current still exact', async () => {
+    const x = await correct(mid, { quantity: 150 });
+    assert.strictEqual(x.original.quantity, 100); assert.strictEqual(x.corrected.quantity, 150);
     await beforeEnteredCheck('edit1', mid);
   });
-  await t('R3 edit #2 (same movement rate 12 -> 18)', async () => {
-    is(await call('PUT', `/movements/${mid}`, { enteredRate: 18 }, A), 200); enteredSent.set(mid, 18);
-    await beforeEnteredCheck('edit2', mid);
+  await t('R3 correction #2 (a different IN rate 15 -> 18)', async () => {
+    const id = idOf('2026-03-12', 'IN'); const x = await correct(id, { enteredRate: 18 });
+    assert.strictEqual(x.original.enteredRate, 15); assert.strictEqual(x.corrected.enteredRate, 18);
+    await beforeEnteredCheck('edit2', id);
   });
-  await t('R3 edit #3 (same movement moved to an earlier date + note)', async () => {
-    is(await call('PUT', `/movements/${mid}`, { movementDate: '2026-03-02', note: 'moved' }, A), 200);
-    const ms = await beforeEnteredCheck('edit3', mid);
-    assert.strictEqual(ms.find((m) => m._id === mid).movementDate.slice(0, 10), '2026-03-02');
+  await t('R3 correction #3 (an IN corrected to an earlier back-dated date + note)', async () => {
+    const id = idOf('2026-03-20', 'IN'); const x = await correct(id, { movementDate: '2026-03-02', note: 'moved' });
+    assert.strictEqual(x.corrected.movementDate.slice(0, 10), '2026-03-02'); assert.strictEqual(x.corrected.note, 'moved');
+    await beforeEnteredCheck('edit3', id);
   });
-  await t('R3 edit #4 (a different movement: OUT -> IN with a rate) and #5 (IN -> RETURN, rate dropped)', async () => {
-    const outId = ids[spec.findIndex(([d, t2, q]) => d === '2026-03-15' && t2 === 'OUT' && q === 200)];
-    is(await call('PUT', `/movements/${outId}`, { type: 'IN', enteredRate: 7 }, A), 200); editedSet.add(outId); enteredSent.set(outId, 7);
+  await t('R3 correction #4 (OUT -> IN with a rate) and #5 (IN -> RETURN, rate dropped)', async () => {
+    const outId = idOf('2026-03-11', 'OUT', 40);
+    const x = await correct(outId, { type: 'IN', enteredRate: 7 });
+    assert.strictEqual(x.reversal.type, 'IN'); assert.strictEqual(x.corrected.type, 'IN'); assert.strictEqual(x.corrected.enteredRate, 7);
     await beforeEnteredCheck('edit4', outId);
-    is(await call('PUT', `/movements/${outId}`, { type: 'RETURN' }, A), 200); enteredSent.delete(outId);
-    const ms = await beforeEnteredCheck('edit5', outId);
-    assert.strictEqual(ms.find((m) => m._id === outId).enteredRate, null);
+    const inId = idOf('2026-03-18', 'IN');
+    const y = await correct(inId, { type: 'RETURN' });
+    assert.strictEqual(y.corrected.type, 'RETURN'); assert.strictEqual(y.corrected.enteredRate, null); assert.strictEqual(y.reversal.type, 'OUT');
+    await beforeEnteredCheck('edit5', inId);
   });
-  await t('R3 no-op edit keeps everything identical', async () => {
-    const before = (await call('GET', `/movements?material=${r3}`, undefined, U)).b, mat0 = (await call('GET', `/materials/${r3}`, undefined, U)).b;
-    is(await call('PUT', `/movements/${mid}`, {}, A), 200);
-    assert.deepStrictEqual((await call('GET', `/movements?material=${r3}`, undefined, U)).b.map((m) => [m._id, m.rate, m.amount, m.balanceAfter, m.isEdited]), before.map((m) => [m._id, m.rate, m.amount, m.balanceAfter, m.isEdited]));
+  await t('R3 one-time rule: corrected originals, reversals and corrected entries all reject a further correction, nothing changes', async () => {
+    const before = (await call('GET', `/movements?material=${r3}`, undefined, U)).b;
+    const extra = before.filter((m) => m.correctionOf).map((m) => m._id);
+    assert.strictEqual(extra.length, 10);
+    for (const id of [mid, ...extra]) is(await call('PUT', `/movements/${id}`, { quantity: 1 }, A), 400);
+    assert.strictEqual((await call('GET', `/movements?material=${r3}`, undefined, U)).b.length, before.length);
+  });
+  await t('R3 no-op correction of a RETURN ({} body) leaves quantity and rate unchanged, ledger stays exact', async () => {
+    const id = idOf('2026-03-25', 'RETURN'); const mat0 = (await call('GET', `/materials/${r3}`, undefined, U)).b;
+    const x = await correct(id, {});
+    assert.strictEqual(x.corrected.quantity, x.original.quantity); assert.strictEqual(x.corrected.note, 'Correction of movement ' + id);
     const mat1b = (await call('GET', `/materials/${r3}`, undefined, U)).b;
-    assert(mat1b.currentQuantity === mat0.currentQuantity && mat1b.currentRate === mat0.currentRate);
+    assert(mat1b.currentQuantity === mat0.currentQuantity); near(mat1b.currentRate, mat0.currentRate, 1e-6);
+    await beforeEnteredCheck('noop', id);
   });
 
   await t('R3 deactivating a material with history keeps every movement readable (API list, all-list, export) and editable', async () => {
     is(await call('PATCH', `/materials/${r3}/deactivate`, undefined, A), 200);
     const l = (await call('GET', `/movements?material=${r3}`, undefined, U)).b;
-    assert.strictEqual(l.length, spec.length);
+    const N = l.length; assert(N > spec.length);
     assert(l.every((m) => m.material && m.material.materialId === 'R3CHAOS' && m.createdBy && m.createdBy.name));
     const all = (await call('GET', '/movements', undefined, U)).b;
-    assert.strictEqual(all.filter((m) => m.material && m.material.materialId === 'R3CHAOS').length, spec.length);
+    assert.strictEqual(all.filter((m) => m.material && m.material.materialId === 'R3CHAOS').length, N);
     const xl = await call('GET', `/reports/movements/excel?material=${r3}`, undefined, U, true);
-    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xl.buf); assert.strictEqual(wb.worksheets[0].rowCount, spec.length + 1);
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xl.buf); assert.strictEqual(wb.worksheets[0].rowCount, N + 1);
     is(await h.move(r3, 'IN', 1, 1), 404); // no new movements while inactive
-    is(await call('PUT', `/movements/${mid}`, { quantity: 160 }, A), 200); // admin correction still works
+    is(await call('PUT', `/movements/${idOf('2026-03-30', 'IN')}`, { quantity: 160 }, A), 200); // admin correction still works
     await chainOk(r3, 'inactive-edit');
     is(await call('PATCH', `/materials/${r3}/reactivate`, undefined, A), 200);
     is(await h.move(r3, 'RETURN', 1), 201);

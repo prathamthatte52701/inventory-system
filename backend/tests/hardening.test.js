@@ -251,7 +251,7 @@ const { httpError, fail, wrap } = require('../utils/errors');
   });
   await t('deactivate -> reactivate round trip; five past movements and the audit trail stay intact and attributed', async () => {
     const u = await mkUser('Mover Mike', 'mover@test.com');
-    const mat = await h.newMaterial('SOFTDEL', { description: 'Soft delete probe', unit: 'Nos' });
+    const mat = await h.newMaterial('SOFTDEL', { description: 'Soft delete probe', unit: 'Nos', openingQuantity: 10, openingRate: 10 });
     const ids = [];
     for (let i = 0; i < 5; i++) { const r = await h.move(mat, i % 2 ? 'OUT' : 'IN', 3 + i, i % 2 ? undefined : 10, { movementDate: '2026-04-0' + (i + 1) }, u.token); is(r, 201); ids.push(r.b.movement._id); }
     const attributed = async (label) => {
@@ -276,7 +276,7 @@ const { httpError, fail, wrap } = require('../utils/errors');
     const login = await call('POST', '/auth/login', { email: u.email, password: PW }); is(login, 200); // can sign in again
     is(await call('GET', '/auth/me', undefined, login.token), 200);
     // the movement the user posted before is still theirs and the ledger math is unchanged
-    const mat2 = (await call('GET', '/materials/' + mat, undefined, A)).b; assert.strictEqual(mat2.currentQuantity, 5); // 3 - 4 + 5 - 6 + 7, unchanged by the deactivation
+    const mat2 = (await call('GET', '/materials/' + mat, undefined, A)).b; assert.strictEqual(mat2.currentQuantity, 15); // 10 + 3 - 4 + 5 - 6 + 7, unchanged by the deactivation
     for (const action of ['USER_DEACTIVATE', 'USER_REACTIVATE']) assert(await AuditLog.exists({ action, entityId: u.id }), action + ' not audited');
   });
   await t('deactivate/reactivate BREAK: twice, already active, unknown id, junk ids, wrong role, no token: clean codes, never a 500', async () => {

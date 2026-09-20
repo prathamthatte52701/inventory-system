@@ -51,39 +51,50 @@ const sheet = async (buf) => { const wb = new ExcelJS.Workbook(); await wb.xlsx.
     assert.strictEqual(m.status, 'AVAILABLE');
     near(d.totalStockValue, 50000, 0.01);
   });
-  await t('8. admin edits FIRST movement qty 50->100: ledger + dashboard recalc', async () => {
+  let fin; // final material state after the correction
+  await t('8. admin corrects FIRST movement qty 50->100: original frozen, reversal+corrected posted, ledger matches oracle', async () => {
+    const { oracle, sorted } = require('./oracle');
     const r = await call('PUT', `/movements/${first}`, { quantity: 100 }, A); is(r, 200);
-    // (100*400 + 100*450) / 200 = 425 ; OUT 30 -> 170
+    assert.strictEqual(r.b.original.quantity, 50); assert.strictEqual(r.b.original.amount, 22500); assert(r.b.original.isEdited === true);
     const l = (await call('GET', `/movements?material=${mat}`, undefined, U)).b;
-    assert.deepStrictEqual(l.map((x) => x.balanceAfter), [200, 170]);
-    assert(l[0].amount === 45000 && l[0].isEdited === true && l[0].rate === 450);
-    assert(l[1].rate === 425 && l[1].amount === 12750);
+    assert.strictEqual(l.length, 4);
+    const raw = l.map((x) => ({ ...x, _id: String(x._id) }));
+    const o = oracle({ qty: 100, rate: 400 }, sorted(raw));
+    const ord = sorted(raw);
+    assert.deepStrictEqual(ord.map((x) => x.type + x.quantity), ['IN50', 'OUT30', 'OUT50', 'IN100']);
+    assert(ord[2].isReversal && String(ord[2].correctionOf) === first && ord[3].correctionOf && !ord[3].isReversal);
+    ord.forEach((x, i) => { near(x.balanceAfter, o.rows[i].bal, 1e-6); near(x.rate, o.rows[i].rate, 0.01); near(x.amount, o.rows[i].amount, 0.01); });
     const d = (await call('GET', '/reports/dashboard', undefined, U)).b;
     const m = d.materials.find((x) => x.materialId === 'CEM1');
-    assert(m.currentQuantity === 170 && m.currentRate === 425 && m.stockValue === 72250);
-    assert.strictEqual(d.totalStockValue, 72250);
+    assert.strictEqual(m.currentQuantity, 170); near(m.currentRate, o.rate, 1e-6); near(m.stockValue, 170 * o.rate, 0.01);
+    near(d.totalStockValue, 170 * o.rate, 0.01);
+    fin = { rate: o.rate, value: 170 * o.rate };
   });
+  await t('8b. an original can be corrected only once', async () => is(await call('PUT', `/movements/${first}`, { quantity: 1 }, A), 400));
   await t('9a. stock-value Excel: non-empty, right data', async () => {
     const r = await call('GET', '/reports/stock-value/excel', undefined, U, true); is(r, 200);
     assert(r.buf.length > 500 && r.buf.slice(0, 2).toString() === 'PK');
     assert(/filename=".*\.xlsx"/.test(r.headers.get('content-disposition')));
     const ws = await sheet(r.buf);
-    assert.deepStrictEqual(ws.getRow(2).values.slice(1), ['CEM1', 'Cement', 'Bag', 170, 425, 72250, 'Available']);
+    const v = ws.getRow(2).values.slice(1);
+    assert.deepStrictEqual([v[0], v[1], v[2], v[3], v[6]], ['CEM1', 'Cement', 'Bag', 170, 'Available']);
+    near(v[4], fin.rate, 0.01); near(v[5], fin.value, 0.01);
   });
   await t('9b. stock-value PDF: non-empty, right data', async () => {
     const r = await call('GET', '/reports/stock-value/pdf', undefined, U, true);
     is(r, 200);
     assert(r.buf.length > 1000 && r.buf.slice(0, 5).toString() === '%PDF-');
     const text = pdfText(r.buf);
-    for (const w of ['CEM1', 'Cement', '72250.00', '425.00']) assert(text.includes(w), 'missing ' + w);
+    for (const w of ['CEM1', 'Cement', fin.value.toFixed(2), fin.rate.toFixed(2)]) assert(text.includes(w), 'missing ' + w);
   });
-  await t('9c. movement-history Excel: non-empty, right data', async () => {
+  await t('9c. movement-history Excel: non-empty, right data (all 4 rows incl. reversal + corrected)', async () => {
     const r = await call('GET', '/reports/movements/excel', undefined, U, true); is(r, 200);
     const ws = await sheet(r.buf);
-    assert.strictEqual(ws.rowCount, 3);
-    const r1 = ws.getRow(2).values.slice(1), r2 = ws.getRow(3).values.slice(1);
-    assert.deepStrictEqual(r1.slice(1, 9), ['CEM1', 'Cement', 'IN', 100, 450, 45000, 200, 'New Bie']);
-    assert.deepStrictEqual(r2.slice(1, 9), ['CEM1', 'Cement', 'OUT', 30, 425, 12750, 170, 'New Bie']);
+    assert.strictEqual(ws.rowCount, 5);
+    const rows = [2, 3, 4, 5].map((i) => ws.getRow(i).values.slice(1));
+    assert.deepStrictEqual(rows.map((x) => x.slice(1, 5)), [['CEM1', 'Cement', 'IN', 50], ['CEM1', 'Cement', 'OUT', 30], ['CEM1', 'Cement', 'OUT', 50], ['CEM1', 'Cement', 'IN', 100]]);
+    assert.deepStrictEqual([rows[0][5], rows[0][6], rows[0][7], rows[0][8]], [450, 22500, 150, 'New Bie']);
+    assert.strictEqual(rows[3][5], 450); assert.strictEqual(rows[3][6], 45000); assert.strictEqual(rows[3][7], 170);
   });
 
   await h.finish();
