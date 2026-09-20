@@ -13,6 +13,10 @@ const movementSchema = new mongoose.Schema({
   movementDate: { type: Date, default: Date.now },
   note: { type: String, maxlength: 500 },
   createdBy: { type: ObjectId, ref: 'User' },
+  // Corrections never rewrite a movement: the original is marked superseded (isEdited/lastEdited*), and a reversal plus a
+  // corrected entry are posted, both pointing back at it through correctionOf.
+  isReversal: { type: Boolean, default: false },
+  correctionOf: { type: ObjectId, ref: 'Movement', default: null },
   isEdited: { type: Boolean, default: false },
   lastEditedBy: { type: ObjectId, ref: 'User' },
   lastEditedAt: Date,

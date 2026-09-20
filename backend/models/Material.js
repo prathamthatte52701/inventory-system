@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { ObjectId } = mongoose.Schema.Types;
 const num = { type: Number, min: 0, default: 0 };
-const signedNum = { type: Number, default: 0 }; // stock may go negative (OUT beyond available)
+const signedNum = { type: Number, default: 0 }; // new OUTs are rejected beyond available stock; negatives can only exist in older history, so no min:0
 
 const materialSchema = new mongoose.Schema({
   materialId: { type: String, required: true, unique: true, uppercase: true, trim: true, maxlength: 50 },

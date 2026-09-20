@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Movement = require('../models/Movement');
 const Material = require('../models/Material');
+const { httpError } = require('./errors');
 
 const round = (n, d) => Math.round((n + Number.EPSILON) * 10 ** d) / 10 ** d;
 const ORDER = { movementDate: 1, createdAt: 1, _id: 1 };
@@ -48,6 +49,53 @@ async function recalculate(material) {
   material.currentRate = state.rate;
   await material.save();
   return material;
+}
+
+// Posts one movement for a material, refusing any OUT that would drive stock negative. MUST be called inside withLock.
+// Shared by movement create and by the correction flow, so the rule lives in exactly one place.
+//   live entry (nothing dated after it): checked against the current balance before anything is written
+//   back-dated entry: inserted, replayed, then every balance is inspected; on a new negative it is deleted and the
+//   replay is run again so the material and all movements return to their pre-insert state
+async function postMovement(material, d) {
+  const { type, quantity, movementDate } = d;
+  const enteredRate = d.enteredRate ?? null;
+  const r = apply({ qty: material.currentQuantity, rate: material.currentRate }, { type, quantity, enteredRate });
+  const backDated = await Movement.exists({ material: material._id, movementDate: { $gt: movementDate } });
+  if (!backDated && type === 'OUT' && r.state.qty < 0)
+    throw httpError(400, `Cannot record OUT of ${quantity}: only ${Math.max(material.currentQuantity, 0)} ${material.unit} available.`);
+
+  const negBefore = new Set((await Movement.distinct('_id', { material: material._id, balanceAfter: { $lt: 0 } })).map(String)); // older history may already be negative
+  const movement = await Movement.create({
+    material: material._id, type, quantity, movementDate, note: d.note, createdBy: d.createdBy,
+    isReversal: !!d.isReversal, correctionOf: d.correctionOf || null, ...r.movement,
+  });
+  if (!backDated) {
+    try {
+      material.currentQuantity = r.state.qty;
+      material.currentRate = r.state.rate;
+      await material.save();
+    } catch (e) {
+      await Movement.deleteOne({ _id: movement._id }); // don't leave a movement the material never absorbed
+      throw e;
+    }
+    return { movement, material };
+  }
+  let bad;
+  try {
+    await recalculate(material);
+    const neg = await Movement.find({ material: material._id, balanceAfter: { $lt: 0 } }).sort(ORDER).lean();
+    bad = neg.find((m) => !negBefore.has(String(m._id)));
+  } catch (e) {
+    await Movement.deleteOne({ _id: movement._id });
+    await recalculate(material).catch(() => {});
+    throw e;
+  }
+  if (bad) {
+    await Movement.deleteOne({ _id: movement._id });
+    await recalculate(material);
+    throw httpError(400, `Cannot insert this back-dated ${type}: it would make stock negative on ${new Date(bad.movementDate).toISOString().slice(0, 10)} after replay.`);
+  }
+  return { movement: await Movement.findById(movement._id), material };
 }
 
 // ---------- per-material lock ----------
@@ -102,4 +150,4 @@ function withLock(key, fn) {
   return run;
 }
 
-module.exports = { apply, recalculate, withLock, lockConfig, ORDER, round };
+module.exports = { apply, recalculate, postMovement, withLock, lockConfig, ORDER, round };

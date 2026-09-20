@@ -1,7 +1,7 @@
 const Material = require('../models/Material');
 const Movement = require('../models/Movement');
 const audit = require('../utils/audit');
-const { apply, recalculate, withLock, ORDER } = require('../utils/costing');
+const { recalculate, postMovement, withLock, ORDER } = require('../utils/costing');
 const { parseNum, isId } = require('../middleware/fields');
 const { httpError, wrap } = require('../utils/errors');
 const { paginate, pageEnvelope } = require('../utils/pagination');
@@ -24,34 +24,13 @@ exports.create = wrap(async (req, res) => {
     const material = await Material.findById(materialId);
     if (!material || !material.isActive) throw httpError(404, 'Material not found or inactive');
 
-    const r = apply({ qty: material.currentQuantity, rate: material.currentRate }, { type, quantity, enteredRate });
-    let movement = await Movement.create({
-      material: material._id, type, quantity, movementDate, note, createdBy: req.user._id, ...r.movement,
-    });
-    try {
-      // back-dated entry lands mid-history, so everything after it must be replayed
-      if (await Movement.exists({ material: material._id, movementDate: { $gt: movementDate } })) {
-        await recalculate(material);
-        movement = await Movement.findById(movement._id);
-      } else {
-        material.currentQuantity = r.state.qty;
-        material.currentRate = r.state.rate;
-        await material.save();
-      }
-    } catch (e) {
-      await Movement.deleteOne({ _id: movement._id }); // don't leave a movement the material never absorbed
-      throw e;
-    }
-    return { movement, material };
+    return postMovement(material, { type, quantity, enteredRate, movementDate, note, createdBy: req.user._id });
   });
 
   await audit(req, 'MOVEMENT_CREATE', 'Movement', out.movement._id, {
     material: out.material.materialId, type, quantity, amount: out.movement.amount,
   });
-  const body = { movement: out.movement, material: out.material };
-  if (out.movement.exceededStock)
-    body.warning = `Requested quantity exceeds available stock; ${out.material.materialId} balance is now ${out.movement.balanceAfter}`;
-  res.status(201).json(body);
+  res.status(201).json({ movement: out.movement, material: out.material });
 });
 
 exports.list = wrap(async (req, res) => {
@@ -69,6 +48,11 @@ exports.list = wrap(async (req, res) => {
   res.json(pageEnvelope(data, pg, total));
 });
 
+// A correction never rewrites the original. It posts a reversing entry and a corrected entry (both linked through
+// correctionOf) and marks the original as superseded. The reversal is built mechanically from the original:
+//   IN -> OUT of the same quantity; OUT -> IN of the same quantity at the rate the OUT was costed at; RETURN -> OUT.
+// Weighted-average costing is order dependent, so if other movements happened in between, the average going forward is
+// close to, but not bit-for-bit, what rewriting history would have given. That is how a reversing ledger behaves.
 exports.update = wrap(async (req, res) => {
   const { id } = req.params;
   if (!isId(id)) throw httpError(400, 'Invalid movement id');
@@ -76,39 +60,66 @@ exports.update = wrap(async (req, res) => {
   if (!first) throw httpError(404, 'Movement not found');
 
   const out = await withLock(String(first.material), async () => {
-    const mv = await Movement.findById(id); // re-read inside the lock
-    if (!mv) throw httpError(404, 'Movement not found');
+    const original = await Movement.findById(id); // re-read inside the lock
+    if (!original) throw httpError(404, 'Movement not found');
+    if (original.isReversal || original.correctionOf)
+      throw httpError(400, 'This entry is itself a correction and cannot be corrected. Correct the original movement, or record a new movement.');
+    if (original.isEdited || await Movement.exists({ correctionOf: original._id }))
+      throw httpError(400, 'This movement has already been corrected and cannot be corrected again. Record a new movement instead.');
+    const material = await Material.findById(original.material);
+    if (!material) throw httpError(404, 'Material not found');
+
+    // the corrected entry: submitted fields, validated like a normal create; omitted fields carry over from the original
     const b = req.body;
-    const next = {
-      type: b.type !== undefined ? b.type : mv.type,
-      quantity: b.quantity !== undefined ? Number(b.quantity) : mv.quantity,
-      movementDate: b.movementDate !== undefined ? new Date(b.movementDate) : mv.movementDate,
-      note: b.note !== undefined ? b.note : mv.note,
-      enteredRate: null,
-    };
-    if (next.type === 'IN') {
+    const type = b.type !== undefined ? b.type : original.type;
+    const quantity = b.quantity !== undefined ? Number(b.quantity) : original.quantity;
+    let enteredRate = null;
+    if (type === 'IN') {
       const given = paidRate(b);
       if (given !== undefined) {
         if (!validRate(given)) throw httpError(400, 'rate must be >= 0');
-        next.enteredRate = Number(given);
-      } else if (mv.enteredRate !== null && mv.enteredRate !== undefined) {
-        next.enteredRate = mv.enteredRate;
+        enteredRate = Number(given);
+      } else if (original.enteredRate !== null && original.enteredRate !== undefined) {
+        enteredRate = original.enteredRate;
       } else {
         throw httpError(400, 'Changing to IN requires a rate');
       }
     }
-    const changed = next.type !== mv.type || next.quantity !== mv.quantity || +next.movementDate !== +mv.movementDate
-      || next.note !== mv.note || next.enteredRate !== (mv.enteredRate ?? null);
+    const now = new Date();
+    const note = b.note !== undefined && String(b.note).trim() ? b.note : `Correction of movement ${original._id}`;
 
-    const material = await Material.findById(mv.material);
-    if (changed) {
-      mv.set({ ...next, isEdited: true, lastEditedBy: req.user._id, lastEditedAt: new Date() });
-      await mv.save();
+    const created = [];
+    try {
+      const reversal = await postMovement(material, {
+        type: original.type === 'OUT' ? 'IN' : 'OUT', quantity: original.quantity,
+        enteredRate: original.type === 'OUT' ? original.rate : null,
+        movementDate: now, note: `Reversal of movement ${original._id}`, createdBy: req.user._id,
+        isReversal: true, correctionOf: original._id,
+      });
+      created.push(reversal.movement._id);
+      // dated when it is posted unless the admin picked a date: booking it right after the reversal keeps the running
+      // balance honest (it never dips below the true position between the two entries)
+      const corrected = await postMovement(material, {
+        type, quantity, enteredRate, movementDate: b.movementDate !== undefined ? new Date(b.movementDate) : now,
+        note, createdBy: req.user._id, correctionOf: original._id,
+      });
+      created.push(corrected.movement._id);
+      await Movement.updateOne({ _id: original._id }, { $set: { isEdited: true, lastEditedBy: req.user._id, lastEditedAt: new Date() } }, { timestamps: false });
+      return {
+        original: await Movement.findById(original._id), reversal: await Movement.findById(reversal.movement._id),
+        corrected: await Movement.findById(corrected.movement._id), material: await Material.findById(material._id),
+      };
+    } catch (e) {
+      if (created.length) { // nothing partial is left behind
+        await Movement.deleteMany({ _id: { $in: created } });
+        await recalculate(material).catch(() => {});
+      }
+      throw e;
     }
-    await recalculate(material); // runs even for a no-op edit; result is then identical
-    return { movement: await Movement.findById(id), material, changed };
   });
 
-  await audit(req, 'MOVEMENT_EDIT', 'Movement', out.movement._id, { changed: out.changed, body: req.body });
-  res.json({ movement: out.movement, material: out.material });
+  await audit(req, 'MOVEMENT_CORRECTION', 'Movement', out.original._id, {
+    original: out.original._id, reversal: out.reversal._id, corrected: out.corrected._id,
+  });
+  res.json(out);
 });
