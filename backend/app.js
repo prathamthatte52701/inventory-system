@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser');
 const app = express();
 // Credentialed CORS: only the listed origins may send the session cookie (the wildcard is not allowed with credentials).
 // Vite's dev proxy makes the app same-origin, so this only matters when the frontend is served from another origin.
-const allowedOrigins = () => (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
+const allowedOrigins = () => (process.env.CORS_ORIGIN || 'http://localhost:2000').split(',').map((s) => s.trim()).filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => cb(null, !origin || allowedOrigins().includes(origin)),
   credentials: true,

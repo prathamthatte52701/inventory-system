@@ -6,7 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  server: { proxy: { '/api': 'http://localhost:5000' } },
+  server: { port: 2000, strictPort: true, proxy: { '/api': 'http://localhost:4000' } },
+  preview: { port: 2000, strictPort: true },
   test: {
     environment: 'jsdom',
     globals: true,

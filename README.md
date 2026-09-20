@@ -125,7 +125,7 @@ ADMIN1_PASSWORD=...
 ADMIN2_NAME=...
 ADMIN2_EMAIL=...
 ADMIN2_PASSWORD=...
-PORT=5000          # optional, default 5000
+PORT=4000          # optional, default 4000
 ```
 
 Generate a strong `JWT_SECRET`:
@@ -167,7 +167,7 @@ npm run dev      # nodemon, auto-restart
 npm start        # plain node
 ```
 
-The API listens on <http://localhost:5000>; health check: `GET /api/health`.
+The API listens on <http://localhost:4000>; health check: `GET /api/health`.
 
 ### 6. Run the two frontends
 
@@ -175,25 +175,25 @@ There are **two separate React apps**, each with its own package, build and dev 
 
 | App | Folder | Dev URL | Who uses it |
 |---|---|---|---|
-| User app | `frontend/` | <http://localhost:5173> | everyone (dashboard, materials, movements, read-only ledger, reports) |
+| User app | `frontend/` | <http://localhost:2000> | everyone (dashboard, materials, movements, read-only ledger, reports) |
 | Admin console | `frontend-admin/` | <http://localhost:5174> | admins only (materials, movement corrections, users, audit log, analytics) |
 
 Run all three servers, one per terminal:
 
 ```bash
-cd backend && npm run dev            # terminal 1: API on :5000
-cd frontend && npm run dev           # terminal 2: user app on :5173
+cd backend && npm run dev            # terminal 1: API on :4000
+cd frontend && npm run dev           # terminal 2: user app on :2000
 cd frontend-admin && npm run dev     # terminal 3: admin console on :5174
 ```
 
-Both Vite servers proxy `/api` to `localhost:5000`, so nothing needs CORS in development. The admin console has its own login and refuses non-admins ("This app is for admins only"). The **Admin** link in the user app's navbar (admins only) opens it in a new tab.
+Both Vite servers proxy `/api` to `localhost:4000`, so nothing needs CORS in development. The admin console has its own login and refuses non-admins ("This app is for admins only"). The **Admin** link in the user app's navbar (admins only) opens it in a new tab.
 
-Addresses between the apps are configurable (see `frontend/.env.example` and `frontend-admin/.env.example`): `VITE_ADMIN_URL` (user app, default `http://localhost:5174`) and `VITE_APP_URL` (admin app's "Back to app" link, default `http://localhost:5173`).
+Addresses between the apps are configurable (see `frontend/.env.example` and `frontend-admin/.env.example`): `VITE_ADMIN_URL` (user app, default `http://localhost:5174`) and `VITE_APP_URL` (admin app's "Back to app" link, default `http://localhost:2000`).
 
 **CORS.** The backend's `CORS_ORIGIN` is a comma-separated list, so both apps can be allowed at once. Only needed when an app talks to the API directly instead of through the Vite proxy:
 
 ```ini
-CORS_ORIGIN=http://localhost:5173,http://localhost:5174
+CORS_ORIGIN=http://localhost:2000,http://localhost:5174
 ```
 
 **UI.** Both apps use Tailwind CSS v4 and a small shadcn/ui-style component kit (`src/components/ui/`: Button, Field/Input/Select, Badge, Alert, Table, Card, page helpers), duplicated in each app rather than shared. They differ in register so you always know where you are: the user app has a light top navbar with a **blue** accent; the admin console has a dark sidebar with a **violet** accent.
@@ -315,7 +315,7 @@ inventory system/
 │   ├── tests/
 │   ├── .env                         # real secrets, git-ignored
 │   └── .env.example                 # blank template, committed
-├── frontend/                        # user app (port 5173)
+├── frontend/                        # user app (port 2000)
 │   ├── src/
 │   │   ├── api.js                   # axios instance (cookie session), 401 interceptor, file download
 │   │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  MainLayout.jsx  App.jsx  useGuard.js
@@ -449,6 +449,6 @@ A separate adversarial pass (spec check against the PDF, attack patterns, concur
 | `querySrv ECONNREFUSED …mongodb.net` | Your resolver blocks SRV records. The app already falls back to public DNS; if it persists, switch your network DNS to `8.8.8.8`, or use the non-SRV connection string from Atlas. |
 | `MongooseServerSelectionError` / timeout | Your IP is not in Atlas **Network Access**. |
 | `bad auth` / authentication failed | Wrong DB user/password in `MONGO_URI`; URL-encode special characters. |
-| Frontend shows "Network Error" | Backend is not running on port 5000 (or `PORT` differs from the proxy target in `frontend/vite.config.js`). |
+| Frontend shows "Network Error" | Backend is not running on port 4000 (or `PORT` differs from the proxy target in `frontend/vite.config.js`). |
 | Login says "Account pending admin approval" | An admin must approve the signup on the **Users** page (or use a seeded admin). |
 | Seed says `exists, skipped` | Expected on re-runs; existing accounts are never modified. |

@@ -7,7 +7,7 @@ const ITEMS = [
   ['/', 'Overview', LayoutDashboard, true], ['/materials', 'Materials', Package], ['/ledger', 'Movement Corrections', PencilLine],
   ['/users', 'Users', Users], ['/audit', 'Audit Log', ScrollText], ['/analytics', 'Analytics', ChartColumn],
 ];
-const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:5173'; // the normal user app
+const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:2000'; // the normal user app
 
 const item = ({ isActive }) =>
   cn('flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',

@@ -246,20 +246,20 @@ const MIN = 60 * 1000;
     assert(!('tokenVersion' in (await call('GET', '/auth/me', undefined, U)).b));
   });
   await t('F3 CORS with credentials: allowed origin gets ACAO+credentials (never "*"), other origins get nothing', async () => {
-    const ok = await rawHttp('GET', '/auth/me', { Origin: 'http://localhost:5173', Cookie: 'token=' + U });
-    assert.strictEqual(ok.headers['access-control-allow-origin'], 'http://localhost:5173');
+    const ok = await rawHttp('GET', '/auth/me', { Origin: 'http://localhost:2000', Cookie: 'token=' + U });
+    assert.strictEqual(ok.headers['access-control-allow-origin'], 'http://localhost:2000');
     assert.strictEqual(ok.headers['access-control-allow-credentials'], 'true');
     const evil = await rawHttp('GET', '/auth/me', { Origin: 'https://evil.example', Cookie: 'token=' + U });
     assert.strictEqual(evil.headers['access-control-allow-origin'], undefined);
     assert.strictEqual(evil.headers['access-control-allow-credentials'], undefined);
-    const pre = await rawHttp('OPTIONS', '/movements', { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' });
+    const pre = await rawHttp('OPTIONS', '/movements', { Origin: 'http://localhost:2000', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' });
     assert.strictEqual(pre.headers['access-control-allow-credentials'], 'true');
     const evilPre = await rawHttp('OPTIONS', '/movements', { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' });
     assert.strictEqual(evilPre.headers['access-control-allow-origin'], undefined);
-    process.env.CORS_ORIGIN = 'https://app.example.com, http://localhost:5173';
+    process.env.CORS_ORIGIN = 'https://app.example.com, http://localhost:2000';
     try { assert.strictEqual((await rawHttp('GET', '/health', { Origin: 'https://app.example.com' })).headers['access-control-allow-origin'], 'https://app.example.com'); } finally { delete process.env.CORS_ORIGIN; }
     const lim = await login('locka@test.com', 'x'); is(lim, 429);
-    const exp = await rawHttp('GET', '/health', { Origin: 'http://localhost:5173' });
+    const exp = await rawHttp('GET', '/health', { Origin: 'http://localhost:2000' });
     assert(/retry-after/i.test(exp.headers['access-control-expose-headers']), 'Retry-After must be readable cross-origin');
   });
 
