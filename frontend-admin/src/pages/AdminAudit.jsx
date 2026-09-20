@@ -67,7 +67,7 @@ export default function AdminAudit() {
             {rows.map((a) => (
               <Tr key={a._id} data-testid={`audit-${a._id}`}>
                 <Td className="whitespace-nowrap"><time dateTime={a.createdAt}>{new Date(a.createdAt).toLocaleString()}</time></Td><Td>{a.userEmail}</Td><Td><ActionBadge action={a.action} /></Td><Td>{a.entityType}</Td>
-                <Td className="max-w-md truncate font-mono text-xs text-slate-500">{a.details && Object.keys(a.details).length ? JSON.stringify(a.details) : ''}</Td>
+                <Td className="max-w-md truncate font-mono text-xs text-muted">{a.details && Object.keys(a.details).length ? JSON.stringify(a.details) : ''}</Td>
               </Tr>
             ))}
             {!rows.length && loaded && <EmptyRow cols={5}>No audit entries match.</EmptyRow>}

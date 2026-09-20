@@ -1,15 +1,172 @@
 @import "tailwindcss";
 
-/* Design tokens. The two apps share every component and differ only in the accent colour:
-   user app = blue (frontend/src/index.css), admin console = violet. */
-@theme {
-  --color-primary: #7c3aed;
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+/* ==========================================================================================================
+   Design tokens. Dark is the default; [data-theme="light"] overrides it. The theme is chosen by JS (see
+   ThemeContext.jsx) and stored on <html data-theme>, so a manual choice always beats the OS preference.
+   The admin console uses the same components as the user app but with the accent roles swapped: violet leads, cyan follows.
+   ========================================================================================================== */
+:root {
+  color-scheme: dark;
+  --bg-base: #04060d;
+  --bg-elevated: #0a1120;                 /* card + table surfaces: near-solid on purpose (readability) */
+  --bg-glass: rgba(12, 20, 40, 0.62);     /* translucent glass panels (chrome, stat tiles, auth card) */
+  --field-bg: rgba(3, 8, 20, 0.6);
+
+  --accent-primary: #a970ff;              /* electric violet */
+  --accent-secondary: #22e5ff;            /* cyan */
+  --accent-contrast: #0b0418;             /* text on top of accent fills */
+
+  --glow-primary: 0 0 0 1px rgba(169, 112, 255, 0.4), 0 0 22px rgba(169, 112, 255, 0.32);
+  --glow-secondary: 0 0 0 1px rgba(34, 229, 255, 0.4), 0 0 22px rgba(34, 229, 255, 0.3);
+  --glow-strong: 0 0 0 1px rgba(169, 112, 255, 0.55), 0 0 26px rgba(169, 112, 255, 0.45), 0 0 46px rgba(34, 229, 255, 0.25);
+  --glow-soft: 0 0 24px -8px rgba(169, 112, 255, 0.28);
+  --glow-text: 0 0 16px rgba(169, 112, 255, 0.55);
+
+  --text-primary: #e8f1ff;
+  --text-muted: #93a7cb;
+  --border-glow: rgba(169, 112, 255, 0.55);
+  --border-subtle: rgba(130, 160, 220, 0.17);
+
+  --ok: #34f5a8;
+  --warn: #ffc857;
+  --err: #ff6b87;
+  --info: #5cc8ff;
+
+  --row-alt: rgba(255, 255, 255, 0.03);
+  --row-hover: rgba(169, 112, 255, 0.08);
+  --grid-line: rgba(90, 140, 255, 0.07);
+  --page-glow-a: rgba(169, 112, 255, 0.11);
+  --page-glow-b: rgba(34, 229, 255, 0.13);
+}
+
+/* Light: same two hues, toned down. Tech feel comes from accent use, not from brightness or glow spread. */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg-base: #f2f6fc;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.74);
+  --field-bg: #ffffff;
+
+  --accent-primary: #7c3aed;
+  --accent-secondary: #0891b2;
+  --accent-contrast: #ffffff;
+
+  --glow-primary: 0 0 0 1px rgba(124, 58, 237, 0.35), 0 2px 10px rgba(124, 58, 237, 0.18);
+  --glow-secondary: 0 0 0 1px rgba(8, 145, 178, 0.32), 0 2px 10px rgba(8, 145, 178, 0.16);
+  --glow-strong: 0 0 0 1px rgba(124, 58, 237, 0.5), 0 4px 16px rgba(124, 58, 237, 0.25);
+  --glow-soft: 0 1px 3px rgba(15, 30, 60, 0.08);
+  --glow-text: none;
+
+  --text-primary: #0b1424;
+  --text-muted: #55637c;
+  --border-glow: rgba(124, 58, 237, 0.5);
+  --border-subtle: rgba(30, 60, 110, 0.15);
+
+  --ok: #0a8f5c;
+  --warn: #a86a00;
+  --err: #c81e4a;
+  --info: #0b74b8;
+
+  --row-alt: rgba(15, 40, 90, 0.035);
+  --row-hover: rgba(124, 58, 237, 0.09);
+  --grid-line: rgba(30, 70, 140, 0.06);
+  --page-glow-a: rgba(124, 58, 237, 0.1);
+  --page-glow-b: rgba(8, 145, 178, 0.08);
+}
+
+/* expose the tokens as Tailwind colours (bg-base, text-fg, border-line, text-primary, ...); `inline` keeps them live vars */
+@theme inline {
+  --color-base: var(--bg-base);
+  --color-elevated: var(--bg-elevated);
+  --color-fg: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-line: var(--border-subtle);
+  --color-primary: var(--accent-primary);
+  --color-accent2: var(--accent-secondary);
+  --color-contrast: var(--accent-contrast);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @layer base {
-  body { @apply bg-slate-50 text-slate-900 antialiased; }
-  /* the number inputs' spin buttons are noise in a data-entry tool */
+  html { background: var(--bg-base); }
+  body {
+    @apply text-fg antialiased;
+    min-height: 100vh;
+    background:
+      radial-gradient(1100px 560px at 8% -8%, var(--page-glow-a), transparent 62%),
+      radial-gradient(900px 520px at 100% 0%, var(--page-glow-b), transparent 58%),
+      var(--bg-base);
+    background-attachment: fixed;
+  }
+  /* faint engineering-paper grid behind everything */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 75%);
+  }
+  #root { position: relative; z-index: 1; }
+
+  ::selection { background: color-mix(in oklab, var(--accent-primary) 35%, transparent); }
+  option { background: var(--bg-elevated); color: var(--text-primary); }
+  input[type="date"] { color-scheme: inherit; }
   input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type="number"] { -moz-appearance: textfield; }
+
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--accent-primary) 45%, transparent) transparent; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--accent-primary) 40%, transparent); border-radius: 999px; }
+  ::-webkit-scrollbar-track { background: transparent; }
 }
+
+@layer components {
+  /* translucent glass panel: chrome, stat tiles, auth card */
+  .glass {
+    background: var(--bg-glass);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+    border: 1px solid var(--border-subtle);
+  }
+  /* thin glowing gradient border (cyan -> transparent -> violet) drawn with a masked pseudo-element */
+  .neon-border { position: relative; }
+  .neon-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, var(--accent-primary), transparent 42%, transparent 58%, var(--accent-secondary));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+    opacity: 0.75;
+    transition: opacity 0.2s;
+  }
+  .neon-border:hover::before { opacity: 1; }
+  .text-glow { text-shadow: var(--glow-text); }
+  .neon-text {
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .tech-label { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; }
+}
+
+/* circuit-node pulse on the auth backdrop */
+@keyframes node-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.node-pulse { animation: node-pulse 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .node-pulse { animation: none; } }

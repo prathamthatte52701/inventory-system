@@ -100,7 +100,7 @@ export default function AdminUsers() {
                       </Td>
                     </Tr>
                     {open?.id === u._id && (
-                      <tr data-testid={`activity-${u._id}`}><td colSpan="5" className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <tr data-testid={`activity-${u._id}`}><td colSpan="5" className="border-b border-line bg-primary/5 px-4 py-3 text-sm text-muted">
                         {open.activity
                           ? <>Movements created: <b>{open.activity.movementCount}</b>{open.activity.lastMovementAt && <> · last on {String(open.activity.lastMovementAt).slice(0, 10)}</>}</>
                           : 'Loading…'}

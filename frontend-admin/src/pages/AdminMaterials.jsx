@@ -73,7 +73,7 @@ export default function AdminMaterials() {
               <Field label="Opening Quantity"><Input type="number" step="any" value={form.openingQuantity} onChange={set('openingQuantity')} /></Field>
               <Field label="Minimum Quantity"><Input type="number" step="any" value={form.minimumQuantity} onChange={set('minimumQuantity')} /></Field>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <div className="flex justify-end gap-2 border-t border-line pt-4">
               <Button type="button" onClick={() => setForm(null)}>Cancel</Button>
               <Button variant="default">Save</Button>
             </div>
@@ -89,7 +89,7 @@ export default function AdminMaterials() {
           </tr></thead>
           <tbody>
             {items.map((m) => (
-              <Tr key={m._id} className={m.isActive ? '' : 'text-slate-400'}>
+              <Tr key={m._id} className={m.isActive ? '' : 'text-muted/70'}>
                 <Td className="font-medium">{m.materialId}{!m.isActive && ' (inactive)'}</Td><Td>{m.description}</Td><Td>{m.unit}</Td>
                 <Td num>{fmt(m.currentQuantity)}</Td><Td num>₹{fmt(m.currentRate)}</Td>
                 <Td num>{fmt(m.minimumQuantity)}</Td>

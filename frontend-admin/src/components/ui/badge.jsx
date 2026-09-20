@@ -4,22 +4,22 @@ import { cn } from '@/lib/utils';
 const badgeVariants = cva('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', {
   variants: {
     tone: {
-      slate: 'bg-slate-100 text-slate-700 ring-slate-200',
-      green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-      amber: 'bg-amber-50 text-amber-800 ring-amber-200',
-      red: 'bg-red-50 text-red-700 ring-red-200',
-      blue: 'bg-sky-50 text-sky-700 ring-sky-200',
-      primary: 'bg-primary/10 text-primary ring-primary/20',
+      slate: 'bg-fg/5 text-muted ring-line',
+      green: 'bg-ok/12 text-ok ring-ok/40',
+      amber: 'bg-warn/12 text-warn ring-warn/40',
+      red: 'bg-err/12 text-err ring-err/40',
+      blue: 'bg-info/12 text-info ring-info/40',
+      primary: 'bg-primary/12 text-primary ring-primary/40',
     },
   },
   defaultVariants: { tone: 'slate' },
 });
-const DOT = { slate: 'bg-slate-400', green: 'bg-emerald-500', amber: 'bg-amber-500', red: 'bg-red-500', blue: 'bg-sky-500', primary: 'bg-primary' };
+const DOT = { slate: 'bg-muted', green: 'bg-ok', amber: 'bg-warn', red: 'bg-err', blue: 'bg-info', primary: 'bg-primary' };
 
 export function Badge({ tone, dot = false, className, children, ...props }) {
   return (
     <span className={cn(badgeVariants({ tone }), className)} {...props}>
-      {dot && <span className={cn('h-1.5 w-1.5 rounded-full', DOT[tone || 'slate'])} aria-hidden="true" />}
+      {dot && <span className={cn('h-1.5 w-1.5 rounded-full shadow-[0_0_6px_currentColor]', DOT[tone || 'slate'])} aria-hidden="true" />}
       {children}
     </span>
   );
@@ -33,9 +33,9 @@ export function StatusBadge({ status }) {
 
 // audit-log action -> colour family
 export function actionTone(action = '') {
-  if (/REJECT/.test(action)) return 'red';
+  if (/REJECT|DEACTIVATE/.test(action)) return 'red';
   if (/ROLE/.test(action)) return 'primary';
-  if (/CREATE|APPROVE/.test(action)) return 'green';
+  if (/CREATE|APPROVE|REACTIVATE/.test(action)) return 'green';
   if (/UPDATE|EDIT/.test(action)) return 'amber';
   if (/SIGNUP/.test(action)) return 'blue';
   return 'slate'; // LOGIN / LOGOUT / anything else

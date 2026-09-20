@@ -73,7 +73,7 @@ export default function AdminAnalytics() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            ) : <p className="mt-3 text-sm text-slate-500" data-testid="volume-empty">No movements in this date range.</p>}
+            ) : <p className="mt-3 text-sm text-muted" data-testid="volume-empty">No movements in this date range.</p>}
           </Card>
         </>
       )}
@@ -86,7 +86,7 @@ export default function AdminAnalytics() {
               <tbody>
                 {top.data.map((m, i) => (
                   <Tr key={m.material} data-testid={`top-${m.materialId}`}>
-                    <Td className="text-slate-500">{i + 1}</Td><Td className="font-medium">{m.materialId}</Td><Td>{m.description}</Td>
+                    <Td className="text-muted">{i + 1}</Td><Td className="font-medium">{m.materialId}</Td><Td>{m.description}</Td>
                     <Td num>{m.movements}</Td><Td num>{fmt(m.quantity)} {m.unit}</Td><Td num>₹{fmt(m.amount)}</Td>
                   </Tr>
                 ))}

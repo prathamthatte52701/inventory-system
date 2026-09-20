@@ -95,7 +95,7 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
                   <Td className="font-medium">{m.material?.materialId}</Td>
                   <Td>{editing
                     ? <Select aria-label="Type" className="h-8 w-24" value={edit.type} onChange={set('type')}><option>IN</option><option>OUT</option><option>RETURN</option></Select>
-                    : <span className="inline-flex items-center gap-1.5">{m.type}{m.isEdited && <span className="text-slate-400" title="edited"> ✎</span>}{m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}</span>}</Td>
+                    : <span className="inline-flex items-center gap-1.5">{m.type}{m.isEdited && <span className="text-muted/70" title="edited"> ✎</span>}{m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}</span>}</Td>
                   <Td num>{editing ? <Input type="number" step="any" aria-label="Quantity" className="h-8 w-20 text-right" value={edit.quantity} onChange={set('quantity')} /> : fmt(m.quantity)}</Td>
                   <Td num>{editing && edit.type === 'IN'
                     ? <Input type="number" step="any" aria-label="Rate" className="h-8 w-20 text-right" value={edit.rate} onChange={set('rate')} />
@@ -103,7 +103,7 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
                   <Td num>₹{fmt(m.amount)}</Td>
                   <Td num>{fmt(m.balanceAfter)}</Td>
                   <Td>{m.createdBy?.name}</Td>
-                  <Td className="text-slate-500">{editing ? <Input aria-label="Note" className="h-8 w-36" value={edit.note} onChange={set('note')} /> : m.note}</Td>
+                  <Td className="text-muted">{editing ? <Input aria-label="Note" className="h-8 w-36" value={edit.note} onChange={set('note')} /> : m.note}</Td>
                   {editable && (
                     <Td>
                       <span className="flex gap-2">

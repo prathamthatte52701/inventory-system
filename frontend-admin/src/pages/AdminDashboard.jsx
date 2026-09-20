@@ -49,8 +49,8 @@ export default function AdminDashboard() {
       <Section title="Quick links">
         <StatGrid className="lg:grid-cols-3">
           {LINKS.map(([to, name, hint]) => (
-            <Link key={to} to={to} className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5">
-              <b className="text-[15px] font-semibold text-slate-900">{name}</b><span className="text-sm text-slate-500">{hint}</span>
+            <Link key={to} to={to} className="flex flex-col gap-1 rounded-xl border border-line bg-elevated p-5 shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/10">
+              <b className="text-[15px] font-semibold text-fg">{name}</b><span className="text-sm text-muted">{hint}</span>
             </Link>
           ))}
         </StatGrid>
