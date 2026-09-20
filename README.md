@@ -256,6 +256,7 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 | `GET` | `/users?status=` | admin | |
 | `PATCH` | `/users/:id/approve` · `/reject` | admin | 409 if already processed. |
 | `PATCH` | `/users/:id/role` | admin | Body `{ role: "admin"\|"user" }`. Cannot change your own role. |
+| `PATCH` | `/users/:id/deactivate` · `/reactivate` | admin | Soft delete: nothing is removed, so every movement and audit entry stays attributed to the user. A deactivated user is refused at login (same generic error as a wrong password) and an open session ends on its next request. 409 if already in that state; you cannot deactivate yourself. |
 | `GET` | `/materials?active=true\|false` | approved | |
 | `GET` | `/materials/:id` | approved | |
 | `POST` | `/materials` | admin | 409 on duplicate ID. |
@@ -296,9 +297,12 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 | **Frontend QA** | `frontend/tests/qa.test.jsx` | Empty submits, double-clicks, Back/Forward, corrupt/expired/tampered sessions, numeric edge cases, hostile text |
 | Frontend ledger paging | `frontend/tests/ledgerPaging.test.jsx` | Every movement past the backend's 200-row page cap stays reachable through Prev/Next |
 | Frontend loading state | `frontend/tests/materialsLoading.test.jsx` | The Materials page never flashes "No materials yet." before data arrives, and never shows it after a failed fetch |
+| Signup rules | `frontend/tests/signupRules.test.jsx` | Live validation, strength meter, password eye, and the same messages coming back from the raw API |
+| Deactivation (user app) | `frontend/tests/deactivate.test.jsx` | A deactivated user is kicked out on the next click, sees the generic login error, and is restored on reactivate |
+| Admin users | `frontend-admin/tests/users.test.jsx` | Deactivate / reactivate from the admin Users page against the real backend (own row disabled) |
 | Admin smoke | `frontend-admin/tests/smoke.test.jsx` | Renders `/login` and expects the "Admin sign in" heading: proves install, run and pass for the admin harness, nothing more |
 
-> **Admin console coverage is still pending.** `frontend-admin/` has only the smoke test above, so its materials CRUD, movement corrections, user approve/reject, audit log and analytics pages are covered only indirectly (through the backend suites) until a proper suite is written there. The old in-app `/admin/*` UI tests were deleted from `frontend/tests/` when the admin console became a separate app.
+> **Admin console coverage is still pending.** `frontend-admin/` has only the smoke test and the users test above, so its materials CRUD, movement corrections, user approve/reject, audit log and analytics pages are covered only indirectly (through the backend suites) until a proper suite is written there. The old in-app `/admin/*` UI tests were deleted from `frontend/tests/` when the admin console became a separate app.
 
 ## Project structure
 
@@ -335,7 +339,8 @@ inventory system/
 
 - Passwords are bcrypt-hashed (`passwordHash` is `select: false`) and are never logged. Request bodies are not logged either.
 - JWTs are verified on every request, and the user's **current** role and status are read from the database, so a token claiming `admin` grants nothing.
-- Login returns the same message for unknown email and wrong password.
+- Login returns the same message for unknown email, wrong password and a deactivated account.
+- Signup rules (enforced by the model, the request validators and the controller, and mirrored live in the signup form): name 3-48 characters, a real email address, password 8-32 characters with a lowercase letter, an uppercase letter, a digit and a special character from `!@#$%^&*()_+-=[]{}|;:,.<>?`. The format is checked before the signup rate limiter is charged.
 - All inputs are type-checked before reaching Mongo, which blocks operator-injection payloads such as `{ "$gt": "" }`.
 - Every number must be a finite value between 0 and 1,000,000,000 and every text field has a length cap, so `NaN`, `Infinity`, arrays, objects and 10,000-character strings are rejected with a 400 before they reach the database.
 - JWTs are pinned to HS256; unknown-email logins take as long as wrong-password ones (no timing oracle); responses carry `X-Content-Type-Options: nosniff`.
