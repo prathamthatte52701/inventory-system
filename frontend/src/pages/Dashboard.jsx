@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import api, { errMsg, fmt } from '../api';
+import api, { downloadFile, errMsg, fmt, localToday } from '../api';
+import { useGuard } from '../useGuard';
+import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { StatusBadge } from '@/components/ui/badge';
 import { Loading, PageHeader, StatCard, StatGrid } from '@/components/ui/page';
@@ -8,6 +10,8 @@ import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 export default function Dashboard() {
   const [d, setD] = useState(null);
   const [error, setError] = useState('');
+  const [dlErr, setDlErr] = useState('');
+  const [run, busy] = useGuard();
 
   useEffect(() => {
     api.get('/reports/dashboard').then((r) => setD(r.data)).catch((e) => setError(errMsg(e)));
@@ -18,7 +22,13 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader title="Dashboard" description="Current stock across all active materials." />
+      <PageHeader title="Dashboard" description="Current stock across all active materials.">
+        <Button size="sm" disabled={busy} onClick={() => run(async () => {
+          setDlErr('');
+          try { await downloadFile('/reports/daily-summary', { date: localToday() }); } catch (e) { setDlErr(errMsg(e)); }
+        })}>Daily Report</Button>
+      </PageHeader>
+      {dlErr && <Alert variant="error" role="alert" className="mb-4">{dlErr}</Alert>}
       <StatGrid className="mb-6">
         <StatCard value={d.totalMaterials} label="Total Materials" testId="total-materials" />
         <StatCard value={`₹${fmt(d.totalStockValue)}`} label="Total Stock Value" testId="total-value" />

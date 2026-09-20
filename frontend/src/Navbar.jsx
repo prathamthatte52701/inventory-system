@@ -29,6 +29,7 @@ export default function Navbar() {
         <NavLink to="/materials" className={link}>Materials</NavLink>
         <NavLink to="/movement" className={link}>Stock Movement</NavLink>
         <NavLink to="/ledger" className={link}>Ledger</NavLink>
+        <NavLink to="/import" className={link}>Import</NavLink>
         <NavLink to="/reports" className={link}>Reports</NavLink>
         {isAdmin && (
           <a href={ADMIN_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium text-accent2 transition-colors hover:bg-accent2/10">

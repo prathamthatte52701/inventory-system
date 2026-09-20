@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileSpreadsheet, FileText } from 'lucide-react';
-import api, { downloadFile, errMsg } from '../api';
+import api, { downloadFile, errMsg, localToday } from '../api';
 import { useGuard } from '../useGuard';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/ui/page';
 export default function Reports() {
   const [materials, setMaterials] = useState([]);
   const [f, setF] = useState({ material: '', from: '', to: '' });
+  const [day, setDay] = useState(localToday);
   const [msg, setMsg] = useState(null); // { ok, text }
   const [run, busy] = useGuard();
 
@@ -57,6 +58,14 @@ export default function Reports() {
             <Field label="From"><Input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></Field>
             <Field label="To"><Input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></Field>
             <Button disabled={busy} onClick={() => download('/reports/movements/excel', params)}><FileSpreadsheet className="h-4 w-4 text-ok" aria-hidden="true" />Download Movement History (Excel)</Button>
+          </div>
+        </Card>
+        <Card className="p-5">
+          <CardTitle>Daily report</CardTitle>
+          <p className="mb-4 mt-1 text-sm text-muted">Opening, receipts, issues and closing balance of every active material for one day (UTC).</p>
+          <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Date"><Input type="date" value={day} onChange={(e) => setDay(e.target.value)} /></Field>
+            <Button disabled={busy || !day} onClick={() => download('/reports/daily-summary', { date: day })}><FileSpreadsheet className="h-4 w-4 text-ok" aria-hidden="true" />Download Daily Report</Button>
           </div>
         </Card>
         {msg && <Alert variant={msg.ok ? 'success' : 'error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</Alert>}

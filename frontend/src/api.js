@@ -33,6 +33,9 @@ export function parseNum(v, min = 0) {
   return Number.isFinite(n) && n >= min && n <= MAX_NUM ? n : NaN;
 }
 
+// Today in the user's local calendar as YYYY-MM-DD (toISOString would be the UTC date, off by a day near midnight).
+export const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
 // Fetch a report as a blob and hand it to the browser as a file download.
 export async function downloadFile(path, params) {
   const res = await api.get(path, { params, responseType: 'blob' });
