@@ -233,6 +233,14 @@ All the money logic lives in one function, [`backend/utils/costing.js`](backend/
 
 `balanceAfter` is the material's quantity right after that movement.
 
+**SRS field-name mapping.** A few SRS terms differ from the names used in the code and API. The fields were deliberately not renamed (a rename would break stored data and every client for no functional gain); this table is the key for reading the code against the SRS.
+
+| SRS term | Actual field | Why |
+|---|---|---|
+| Per Unit Rate | `rate` (on a movement; `enteredRate` is the rate actually paid on an IN) | Same value. `rate` is the effective per-unit rate of that movement |
+| Movement ID | `_id` (MongoDB's built-in id) | No separate field is needed: every movement already has a unique id |
+| Balance Quantity | `balanceAfter` | Same value: the material's quantity right after that movement (see above) |
+
 **Worked example**
 
 | # | Movement | Amount | Balance | Avg rate after |
