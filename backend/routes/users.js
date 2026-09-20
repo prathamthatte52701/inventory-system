@@ -8,5 +8,7 @@ router.get('/:id/activity', c.activity);
 router.patch('/:id/approve', c.approve);
 router.patch('/:id/reject', c.reject);
 router.patch('/:id/role', c.setRole);
+router.patch('/:id/deactivate', c.deactivate);
+router.patch('/:id/reactivate', c.reactivate);
 
 module.exports = router;

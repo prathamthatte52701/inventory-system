@@ -8,7 +8,7 @@ const sheet = async (buf) => { const wb = new ExcelJS.Workbook(); await wb.xlsx.
 (async () => {
   const h = await setup('e2e');
   const { t, is, call, assert, near } = h;
-  const email = 'newbie@test.com', password = 'brandnew1';
+  const email = 'newbie@test.com', password = 'BrandNew#1';
   let uid, U, mat, first, second;
   const A = h.admin;
 

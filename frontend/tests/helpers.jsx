@@ -35,7 +35,7 @@ export const adminApi = async () => as((await loginApi(ADMIN)).cookie);
 // creates + approves a normal user; returns { email, password, id }
 export async function makeUser(name = 'Test User') {
   const email = `${uid('u').toLowerCase()}@test.com`;
-  const password = 'secret1';
+  const password = 'Secret#123';
   const { data } = await raw.post('/auth/signup', { name, email, password });
   await (await adminApi()).patch(`/users/${data.id}/approve`);
   return { email, password, id: data.id, name };

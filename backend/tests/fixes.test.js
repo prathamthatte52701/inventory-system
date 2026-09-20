@@ -32,7 +32,7 @@ const MIN = 60 * 1000;
   });
   const json = (o) => JSON.stringify(o);
   const JH = { 'Content-Type': 'application/json' };
-  const mkUser = async (email, pw = 'secret1') => { const s = await call('POST', '/auth/signup', { name: 'T', email, password: pw }); is(s, 201); is(await call('PATCH', `/users/${s.b.id}/approve`, undefined, A), 200); return s.b.id; };
+  const mkUser = async (email, pw = 'Secret#123') => { const s = await call('POST', '/auth/signup', { name: 'Tester', email, password: pw }); is(s, 201); is(await call('PATCH', `/users/${s.b.id}/approve`, undefined, A), 200); return s.b.id; };
   const login = (email, pw) => call('POST', '/auth/login', { email, password: pw });
   const attempts = (email) => LoginAttempt.findOne({ email }).lean();
 
@@ -52,7 +52,7 @@ const MIN = 60 * 1000;
   await mkUser('rl1@test.com');
   await t('F1 5 wrong passwords -> 401 each; the 6th attempt is locked out EVEN WITH THE CORRECT PASSWORD (429 + Retry-After)', async () => {
     for (let i = 1; i <= 5; i++) is(await login('rl1@test.com', 'wrong' + i), 401);
-    const r = await login('rl1@test.com', 'secret1'); // correct!
+    const r = await login('rl1@test.com', 'Secret#123'); // correct!
     is(r, 429);
     const ra = Number(r.headers.get('retry-after'));
     assert(Number.isInteger(ra) && ra > 880 && ra <= 900, 'Retry-After ' + ra);
@@ -63,23 +63,23 @@ const MIN = 60 * 1000;
     assert(a.failures === 6 && a.lockedUntil > new Date(), 'state stored in MongoDB');
   });
   await t('F1 lockout is in MongoDB, so a different process (a restarted server) sees it too', async () => {
-    const r = await childCall('POST', '/auth/login', { email: 'rl1@test.com', password: 'secret1' });
+    const r = await childCall('POST', '/auth/login', { email: 'rl1@test.com', password: 'Secret#123' });
     assert.strictEqual(r.s, 429); assert(Number(r.headers['retry-after']) > 0);
   });
   await t('F1 lockout clears once the window passes (time moved by editing the stored timestamps)', async () => {
     // 60s left: Retry-After reflects the stored deadline
     await LoginAttempt.updateOne({ email: 'rl1@test.com' }, { lockedUntil: new Date(Date.now() + 60000) });
-    const near60 = await login('rl1@test.com', 'secret1'); is(near60, 429);
+    const near60 = await login('rl1@test.com', 'Secret#123'); is(near60, 429);
     const ra = Number(near60.headers.get('retry-after')); assert(ra >= 55 && ra <= 60, 'Retry-After ' + ra);
     // window over
     await LoginAttempt.updateOne({ email: 'rl1@test.com' }, { lockedUntil: new Date(Date.now() - 1000), windowStart: new Date(Date.now() - 16 * MIN) });
-    const ok = await login('rl1@test.com', 'secret1'); is(ok, 200);
+    const ok = await login('rl1@test.com', 'Secret#123'); is(ok, 200);
     assert.strictEqual(await attempts('rl1@test.com'), null); // success wiped the counter
   });
   await t('F1 a lockout that has expired does not linger: 5 more wrong attempts are again allowed', async () => {
     await mkUser('rl1b@test.com');
     for (let i = 0; i < 6; i++) await login('rl1b@test.com', 'bad');
-    is(await login('rl1b@test.com', 'secret1'), 429);
+    is(await login('rl1b@test.com', 'Secret#123'), 429);
     await LoginAttempt.updateOne({ email: 'rl1b@test.com' }, { lockedUntil: new Date(Date.now() - 1), windowStart: new Date(Date.now() - 20 * MIN) });
     for (let i = 0; i < 5; i++) is(await login('rl1b@test.com', 'bad'), 401);
     is(await login('rl1b@test.com', 'bad'), 429);
@@ -88,7 +88,7 @@ const MIN = 60 * 1000;
     for (let k = 1; k <= 5; k++) {
       const email = `rl2_${k}@test.com`; await mkUser(email);
       for (let i = 1; i < k; i++) is(await login(email, 'nope'), 401);
-      is(await login(email, 'secret1'), 200);                       // attempt k is correct
+      is(await login(email, 'Secret#123'), 200);                       // attempt k is correct
       assert.strictEqual(await attempts(email), null, `counter reset after success on attempt ${k}`);
       for (let i = 0; i < 5; i++) is(await login(email, 'nope'), 401); // a full fresh allowance of 5
       is(await login(email, 'nope'), 429);                          // and only then the lock
@@ -107,15 +107,15 @@ const MIN = 60 * 1000;
     await LoginAttempt.updateOne({ email: 'rl3b@test.com' }, { windowStart: new Date(Date.now() - 16 * MIN) });
     for (let i = 0; i < 4; i++) is(await login('rl3b@test.com', 'nope'), 401);
     assert.strictEqual((await attempts('rl3b@test.com')).failures, 4);
-    is(await login('rl3b@test.com', 'secret1'), 200);
+    is(await login('rl3b@test.com', 'Secret#123'), 200);
   });
   await t('F1 lockout is per email: locking A leaves B (and A-lookalikes) untouched; unknown emails lock the same way', async () => {
     await mkUser('locka@test.com'); await mkUser('lockb@test.com'); await mkUser('LOCKA2@test.com');
     for (let i = 0; i < 6; i++) await login('locka@test.com', 'bad');
-    is(await login('locka@test.com', 'secret1'), 429);
-    is(await login('lockb@test.com', 'secret1'), 200);
-    is(await login('locka2@test.com', 'secret1'), 200);
-    is(await login('LOCKA@test.com', 'secret1'), 429); // same mailbox, different case = same counter
+    is(await login('locka@test.com', 'Secret#123'), 429);
+    is(await login('lockb@test.com', 'Secret#123'), 200);
+    is(await login('locka2@test.com', 'Secret#123'), 200);
+    is(await login('LOCKA@test.com', 'Secret#123'), 429); // same mailbox, different case = same counter
     for (let i = 0; i < 5; i++) is(await login('ghost@test.com', 'x'), 401);
     is(await login('ghost@test.com', 'x'), 429);        // no account, same behaviour: nothing revealed
     is(await login('ghost2@test.com', 'x'), 401);
@@ -126,15 +126,15 @@ const MIN = 60 * 1000;
     const codes = rs.map((r) => r.s);
     assert.strictEqual(codes.filter((c) => c === 401).length, 5, JSON.stringify(codes));
     assert.strictEqual(codes.filter((c) => c === 429).length, 15);
-    is(await login('burst@test.com', 'secret1'), 429);
+    is(await login('burst@test.com', 'Secret#123'), 429);
   });
   await t('F1 only login is limited: signup, other routes and malformed logins are never throttled', async () => {
     await mkUser('other@test.com');
     for (let i = 0; i < 8; i++) is(await call('POST', '/auth/login', { email: 'other@test.com' }), 400); // invalid body: not charged
     for (let i = 0; i < 8; i++) is(await call('POST', '/auth/login', { email: 'not-an-email', password: 'x' }), 400);
     assert.strictEqual(await attempts('other@test.com'), null);
-    is(await login('other@test.com', 'secret1'), 200);
-    const s = await Promise.all(Array.from({ length: 10 }, (_, i) => call('POST', '/auth/signup', { name: 'S', email: `spam${i}@test.com`, password: 'secret1' })));
+    is(await login('other@test.com', 'Secret#123'), 200);
+    const s = await Promise.all(Array.from({ length: 10 }, (_, i) => call('POST', '/auth/signup', { name: 'Spammer', email: `spam${i}@test.com`, password: 'Secret#123' })));
     s.forEach((r) => is(r, 201));
     for (let i = 0; i < 15; i++) is(await call('GET', '/materials', undefined, U), 200);
     for (let i = 0; i < 8; i++) is(await call('GET', '/auth/me', undefined, U), 200);
@@ -150,7 +150,7 @@ const MIN = 60 * 1000;
   await mkUser('cookie@test.com');
   let loginSetCookie, cookieToken;
   await t('F3 login sets an httpOnly + Secure + SameSite=Strict cookie and never returns the token in the body', async () => {
-    const r = await rawHttp('POST', '/auth/login', JH, json({ email: 'cookie@test.com', password: 'secret1' }));
+    const r = await rawHttp('POST', '/auth/login', JH, json({ email: 'cookie@test.com', password: 'Secret#123' }));
     assert.strictEqual(r.s, 200);
     assert.strictEqual(r.setCookie.length, 1);
     loginSetCookie = r.setCookie[0];
@@ -171,7 +171,7 @@ const MIN = 60 * 1000;
     process.env.COOKIE_SECURE = 'false';
     try {
       await mkUser('nosecure@test.com');
-      const r = await rawHttp('POST', '/auth/login', JH, json({ email: 'nosecure@test.com', password: 'secret1' }));
+      const r = await rawHttp('POST', '/auth/login', JH, json({ email: 'nosecure@test.com', password: 'Secret#123' }));
       const attrs = r.setCookie[0].split(';').map((x) => x.trim());
       assert(!attrs.includes('Secure') && attrs.includes('HttpOnly') && attrs.includes('SameSite=Strict'));
     } finally { delete process.env.COOKIE_SECURE; }
@@ -201,7 +201,7 @@ const MIN = 60 * 1000;
   });
   let oldToken;
   await t('F3 logout clears the cookie for real (empty value, expired, same attributes) and the old token dies server-side', async () => {
-    oldToken = (await login('cookie@test.com', 'secret1')).token; assert(oldToken);
+    oldToken = (await login('cookie@test.com', 'Secret#123')).token; assert(oldToken);
     assert.strictEqual((await call('GET', '/auth/me', undefined, oldToken)).s, 200);
     const r = await rawHttp('POST', '/auth/logout', { Cookie: 'token=' + oldToken });
     assert.strictEqual(r.s, 200);
@@ -220,7 +220,7 @@ const MIN = 60 * 1000;
     for (const p of ['/materials', '/movements', '/reports/dashboard']) assert.strictEqual((await rawHttp('GET', p, { Cookie: 'token=' + oldToken })).s, 401, p);
   });
   await t('F3 after logout a fresh login works and issues a working token; the old one stays dead', async () => {
-    const r = await login('cookie@test.com', 'secret1'); is(r, 200);
+    const r = await login('cookie@test.com', 'Secret#123'); is(r, 200);
     assert.notStrictEqual(r.token, oldToken);
     assert.strictEqual((await call('GET', '/auth/me', undefined, r.token)).s, 200);
     assert.strictEqual((await call('GET', '/auth/me', undefined, oldToken)).s, 401);
@@ -234,7 +234,7 @@ const MIN = 60 * 1000;
   });
   await t('F3 logging out one session ends the user\'s other tokens too (documented: tokenVersion is per user)', async () => {
     await mkUser('multi@test.com');
-    const t1 = (await login('multi@test.com', 'secret1')).token, t2 = (await login('multi@test.com', 'secret1')).token;
+    const t1 = (await login('multi@test.com', 'Secret#123')).token, t2 = (await login('multi@test.com', 'Secret#123')).token;
     assert.strictEqual((await call('GET', '/auth/me', undefined, t2)).s, 200);
     await rawHttp('POST', '/auth/logout', { Cookie: 'token=' + t1 });
     assert.strictEqual((await call('GET', '/auth/me', undefined, t1)).s, 401);

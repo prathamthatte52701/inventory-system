@@ -18,6 +18,8 @@ exports.requireAuth = async (req, res, next) => {
     if ((payload.tv || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ message: 'Session ended, please log in again' });
     // re-checked on every request so revoked users lose access immediately
     if (user.status !== 'approved') return res.status(403).json({ message: 'Account not approved' });
+    // a deactivated user's existing session dies on its very next request (401 makes the frontends drop the session)
+    if (user.active === false) return res.status(401).json({ message: 'Account deactivated' });
     req.user = user;
     next();
   } catch (e) {

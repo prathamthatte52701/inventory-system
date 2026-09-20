@@ -122,13 +122,13 @@ function oracle(opening, ms) {
 
   // ============================================================ ROUND 2: security
   const victimTok = (async () => {
-    const s = await call('POST', '/auth/signup', { name: 'Victim', email: 'victim@test.com', password: 'secret1' });
+    const s = await call('POST', '/auth/signup', { name: 'Victim', email: 'victim@test.com', password: 'Secret#123' });
     await call('PATCH', `/users/${s.b.id}/approve`, undefined, A);
-    const tok = (await call('POST', '/auth/login', { email: 'victim@test.com', password: 'secret1' })).token;
+    const tok = (await call('POST', '/auth/login', { email: 'victim@test.com', password: 'Secret#123' })).token;
     await h.User.deleteOne({ _id: s.b.id });
     return tok;
   })();
-  const pendingId = (await call('POST', '/auth/signup', { name: 'Pending', email: 'pend@test.com', password: 'secret1' })).b.id;
+  const pendingId = (await call('POST', '/auth/signup', { name: 'Pending', email: 'pend@test.com', password: 'Secret#123' })).b.id;
   const someMv = (await call('GET', `/movements?material=${mat1}`, undefined, U)).b[0]._id;
   const goodBody = { materialId: 'ZZ1', description: 'd', unit: 'u' };
 
@@ -189,7 +189,7 @@ function oracle(opening, ms) {
       { email: "admin@x.com' || '1'=='1", password: 'x' }, { email: true, password: true }, { email: null, password: null }, {},
     ];
     for (const b of bodies) { const r = await call('POST', '/auth/login', b); assert(r.s === 400 || r.s === 401, JSON.stringify(b) + ' -> ' + r.s); assert(!r.b || !r.b.token); }
-    for (const b of [{ name: { $ne: 1 }, email: 'a@b.com', password: 'secret1' }, { name: 'n', email: { $ne: 1 }, password: 'secret1' }, { name: 'n', email: 'a@b.com', password: { $ne: 1 } }])
+    for (const b of [{ name: { $ne: 1 }, email: 'a@b.com', password: 'Secret#123' }, { name: 'n', email: { $ne: 1 }, password: 'Secret#123' }, { name: 'n', email: 'a@b.com', password: { $ne: 1 } }])
       is(await call('POST', '/auth/signup', b), 400);
     for (const q of ['/users?status[$ne]=x', '/users?status=a&status=b', '/movements?material[$ne]=1', '/movements?material=a&material=b', '/materials?active[$ne]=true', '/reports/movements/excel?material[$gt]=1', '/reports/movements/excel?from=a&from=b'])
       ok5(await call('GET', q, undefined, A, true), q);
@@ -216,7 +216,7 @@ function oracle(opening, ms) {
   await t('R2 oversized strings (10001+ chars) in every text field -> 400, nothing stored', async () => {
     const big = 'x'.repeat(10001);
     const cases = [
-      ['POST', '/auth/signup', { name: big, email: 'o1@x.com', password: 'secret1' }], ['POST', '/auth/signup', { name: 'n', email: big + '@x.com', password: 'secret1' }],
+      ['POST', '/auth/signup', { name: big, email: 'o1@x.com', password: 'Secret#123' }], ['POST', '/auth/signup', { name: 'n', email: big + '@x.com', password: 'Secret#123' }],
       ['POST', '/auth/signup', { name: 'n', email: 'o2@x.com', password: big }], ['POST', '/auth/login', { email: big + '@x.com', password: 'x' }], ['POST', '/auth/login', { email: 'a@b.com', password: big }],
       ['POST', '/materials', { ...goodBody, materialId: big }, A], ['POST', '/materials', { ...goodBody, description: big }, A], ['POST', '/materials', { ...goodBody, unit: big }, A],
       ['PUT', `/materials/${mat1}`, { description: big }, A], ['PUT', `/materials/${mat1}`, { unit: big }, A],

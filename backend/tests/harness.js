@@ -65,9 +65,9 @@ module.exports = async function setup(label) {
   };
   await seedAdmins();
   h.admin = (await h.call('POST', '/auth/login', { email: process.env.ADMIN1_EMAIL, password: process.env.ADMIN1_PASSWORD })).token;
-  const su = await h.call('POST', '/auth/signup', { name: 'Bob', email: 'bob@test.com', password: 'secret1' });
+  const su = await h.call('POST', '/auth/signup', { name: 'Bob', email: 'bob@test.com', password: 'Secret#123' });
   await h.call('PATCH', `/users/${su.b.id}/approve`, undefined, h.admin);
-  h.user = (await h.call('POST', '/auth/login', { email: 'bob@test.com', password: 'secret1' })).token;
+  h.user = (await h.call('POST', '/auth/login', { email: 'bob@test.com', password: 'Secret#123' })).token;
   h.newMaterial = async (id, extra = {}) =>
     (await h.call('POST', '/materials', { materialId: id, description: 'Cement', unit: 'Bag', ...extra }, h.admin)).b._id;
   h.move = (material, type, quantity, rate, extra = {}, token = h.user) =>

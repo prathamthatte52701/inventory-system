@@ -84,7 +84,7 @@ describe('Round 4 · rapid double-click (exactly one request, no phantom error)'
   it('signup: one account, success screen (no "already registered" error)', async () => {
     const spy = vi.spyOn(api, 'post');
     renderApp('/signup');
-    await type('Name', 'Dbl'); await type('Email', `${uid('d').toLowerCase()}@test.com`); await type('Password', 'secret1');
+    await type('Name', 'Dbl'); await type('Email', `${uid('d').toLowerCase()}@test.com`); await type('Password', 'Secret#123');
     await userEvent.dblClick(screen.getByRole('button', { name: 'Sign up' }));
     expect(await screen.findByText(/waiting for admin approval/i)).toBeInTheDocument();
     expect(calls(spy, '/auth/signup')).toBe(1);

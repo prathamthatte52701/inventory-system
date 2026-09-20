@@ -52,5 +52,27 @@ exports.activity = wrap(async (req, res) => {
   res.json({ movementCount, lastMovementAt: last ? last.createdAt : null });
 });
 
+// soft delete / restore: same atomic pattern as approve/reject. Nothing is ever removed, so every movement and audit
+// entry the user created stays intact and attributed to them.
+const setActive = (active) => wrap(async (req, res) => {
+  const { id } = req.params;
+  if (!isId(id)) return fail(res, 400, 'Invalid user id');
+  if (!active && String(req.user._id) === id.toLowerCase()) return fail(res, 400, 'You cannot deactivate your own account');
+  // a missing `active` field counts as active, so "currently in the opposite state" is: active !== false  /  active === false
+  const user = await User.findOneAndUpdate(
+    { _id: id, active: active ? false : { $ne: false } },
+    { active },
+    { returnDocument: 'after' }
+  );
+  if (!user) {
+    const exists = await User.exists({ _id: id });
+    return exists ? fail(res, 409, active ? 'User is already active' : 'User is already deactivated') : fail(res, 404, 'User not found');
+  }
+  await audit(req, active ? 'USER_REACTIVATE' : 'USER_DEACTIVATE', 'User', user._id, { email: user.email });
+  res.json(user);
+});
+exports.deactivate = setActive(false);
+exports.reactivate = setActive(true);
+
 exports.approve = decide('approved');
 exports.reject = decide('rejected');

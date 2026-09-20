@@ -59,18 +59,18 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
 
   let uid;
   await t('signup -> pending', async () => {
-    const r = await call('POST', '/auth/signup', { name: 'Bob', email: 'Bob@Test.com', password: 'secret1' });
+    const r = await call('POST', '/auth/signup', { name: 'Bob', email: 'Bob@Test.com', password: 'Secret#123' });
     is(r, 201); assert.strictEqual(r.b.status, 'pending'); uid = r.b.id;
     const u = await User.findById(uid).select('+passwordHash');
-    assert(u.passwordHash !== 'secret1' && u.passwordHash.startsWith('$2'));
+    assert(u.passwordHash !== 'Secret#123' && u.passwordHash.startsWith('$2'));
   });
   await t('signup cannot self-assign admin/approved', async () => {
-    const r = await call('POST', '/auth/signup', { name: 'Eve', email: 'eve@test.com', password: 'secret1', role: 'admin', status: 'approved' });
+    const r = await call('POST', '/auth/signup', { name: 'Eve', email: 'eve@test.com', password: 'Secret#123', role: 'admin', status: 'approved' });
     is(r, 201);
     const u = await User.findOne({ email: 'eve@test.com' });
     assert(u.role === 'user' && u.status === 'pending');
   });
-  await t('login blocks pending', async () => is(await call('POST', '/auth/login', { email: 'bob@test.com', password: 'secret1' }), 403));
+  await t('login blocks pending', async () => is(await call('POST', '/auth/login', { email: 'bob@test.com', password: 'Secret#123' }), 403));
   await t('pending id has no access even w/ forged-valid token', async () => {
     const tok = jwt.sign({ id: uid, role: 'user' }, process.env.JWT_SECRET);
     is(await call('GET', '/materials', undefined, tok), 403);
@@ -86,13 +86,13 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
   });
   let U;
   await t('login ok after approval', async () => {
-    const r = await call('POST', '/auth/login', { email: 'bob@test.com', password: 'secret1' });
+    const r = await call('POST', '/auth/login', { email: 'bob@test.com', password: 'Secret#123' });
     is(r, 200); U = r.token; assert.strictEqual(r.b.user.role, 'user');
   });
   await t('reject flow blocks login', async () => {
     const eve = await User.findOne({ email: 'eve@test.com' });
     is(await call('PATCH', `/users/${eve._id}/reject`, undefined, A), 200);
-    is(await call('POST', '/auth/login', { email: 'eve@test.com', password: 'secret1' }), 403);
+    is(await call('POST', '/auth/login', { email: 'eve@test.com', password: 'Secret#123' }), 403);
   });
   await t('login audited', async () => assert(await AuditLog.exists({ action: 'LOGIN', userEmail: 'bob@test.com' })));
 
@@ -122,8 +122,8 @@ const is = (r, s) => assert.strictEqual(r.s, s, `expected ${s} got ${r.s} ${JSON
   await t('approve then reject processed user -> 409', async () => is(await call('PATCH', `/users/${uid}/reject`, undefined, A), 409));
   await t('approve nonexistent -> 404', async () => is(await call('PATCH', `/users/${new mongoose.Types.ObjectId()}/approve`, undefined, A), 404));
   await t('approve malformed id -> 400', async () => is(await call('PATCH', '/users/notanid/approve', undefined, A), 400));
-  await t('duplicate email (case-insens) -> 409', async () => is(await call('POST', '/auth/signup', { name: 'X', email: 'BOB@test.com', password: 'secret1' }), 409));
-  await t('signup bad email 400', async () => is(await call('POST', '/auth/signup', { name: 'X', email: 'bad', password: 'secret1' }), 400));
+  await t('duplicate email (case-insens) -> 409', async () => is(await call('POST', '/auth/signup', { name: 'Xavier', email: 'BOB@test.com', password: 'Secret#123' }), 409));
+  await t('signup bad email 400', async () => is(await call('POST', '/auth/signup', { name: 'X', email: 'bad', password: 'Secret#123' }), 400));
   await t('signup short password 400', async () => is(await call('POST', '/auth/signup', { name: 'X', email: 'x@x.com', password: '123' }), 400));
   await t('signup missing fields 400', async () => is(await call('POST', '/auth/signup', {}), 400));
   await t('login NoSQL injection 400', async () => is(await call('POST', '/auth/login', { email: { $gt: '' }, password: { $gt: '' } }), 400));

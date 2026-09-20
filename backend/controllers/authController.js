@@ -5,9 +5,15 @@ const { NAME, setAuthCookie, clearAuthCookie } = require('../utils/cookie');
 const limiter = require('../utils/loginLimiter');
 const audit = require('../utils/audit');
 const { fail } = require('../utils/errors');
+const { nameProblem, emailProblem, passwordProblem } = require('../utils/validation');
 
 exports.signup = async (req, res, next) => {
   try {
+    // format first, limiter second: a request that is going to be rejected anyway must not burn a rate-limit slot
+    // (the route validators already did this; repeated here so the controller is safe on its own)
+    const bad = nameProblem(req.body.name) || emailProblem(req.body.email) || passwordProblem(req.body.password);
+    if (bad) return fail(res, 400, bad);
+
     // limits read per request so they can be tuned via env; charged before any lookup/hashing so bursts cannot slip past
     const windowMs = Number(process.env.SIGNUP_RATE_WINDOW_MS) || 60 * 60 * 1000;
     const maxAttempts = Number(process.env.SIGNUP_RATE_MAX) || 5;
@@ -52,7 +58,8 @@ exports.login = async (req, res, next) => {
 
     const user = await User.findOne({ email }).select('+passwordHash +tokenVersion');
     const ok = user ? await user.comparePassword(password) : (await bcrypt.compare(password, DUMMY_HASH), false);
-    if (!ok) return fail(res, 401, 'Invalid email or password');
+    // a deactivated account gets the SAME answer as a wrong password: an unauthenticated caller learns nothing about it
+    if (!ok || user.active === false) return fail(res, 401, 'Invalid email or password');
 
     await limiter.reset(email); // correct password: the counter starts over
     if (user.status === 'pending') return fail(res, 403, 'Account pending admin approval');

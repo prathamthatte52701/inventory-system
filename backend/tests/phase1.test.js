@@ -13,7 +13,7 @@ const bad = (n, doc, path) => t(n, () => {
 });
 const ok = (n, doc) => t(n, () => assert.ifError(doc.validateSync()));
 
-const u = { name: 'A', email: 'a@b.com', passwordHash: 'x' };
+const u = { name: 'Alice', email: 'a@b.com', passwordHash: 'x' };
 ok('user valid', new User(u));
 t('user defaults', () => { const d = new User(u); assert(d.role === 'user' && d.status === 'pending'); });
 bad('user bad email', new User({ ...u, email: 'nope' }), 'email');

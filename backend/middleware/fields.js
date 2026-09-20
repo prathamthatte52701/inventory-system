@@ -1,6 +1,7 @@
 // Strict field validators. express-validator's isFloat/isString quietly accept arrays, "1e999" and similar,
 // which is how NaN/Infinity/500s got into the system, so numbers and strings are checked by hand here.
 const { body } = require('express-validator');
+const V = require('../utils/validation');
 
 const LIMIT = 1e9; // largest accepted quantity or rate
 const isId = (v) => typeof v === 'string' && /^[0-9a-fA-F]{24}$/.test(v);
@@ -58,4 +59,18 @@ const date = (field) =>
     return true;
   });
 
-module.exports = { isId, LIMIT, parseNum, num, str, oneOf, objectId, date };
+// user-facing field rules (see utils/validation.js). Run on the raw value first, THEN trim, so arrays/objects are never
+// stringified into something that passes.
+const fromRule = (field, rule, { trim = false } = {}) => {
+  const chain = body(field).custom((v) => {
+    const problem = rule(v);
+    if (problem) throw new Error(problem);
+    return true;
+  });
+  return trim ? chain.trim() : chain;
+};
+const password = (field = 'password') => fromRule(field, V.passwordProblem);
+const username = (field = 'name') => fromRule(field, V.nameProblem, { trim: true });
+const emailField = (field = 'email') => fromRule(field, V.emailProblem, { trim: true });
+
+module.exports = { password, username, emailField, isId, LIMIT, parseNum, num, str, oneOf, objectId, date };

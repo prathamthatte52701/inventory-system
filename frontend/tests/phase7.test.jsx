@@ -22,7 +22,7 @@ describe('Phase 7 brutal', () => {
     renderApp('/signup');
     await type('Name', 'New Person');
     await type('Email', `${uid('s').toLowerCase()}@test.com`);
-    await type('Password', 'secret1');
+    await type('Password', 'Secret#123');
     await userEvent.click(screen.getByRole('button', { name: 'Sign up' }));
     expect(await screen.findByText(/waiting for admin approval/i)).toBeInTheDocument();
     expect(localStorage.length).toBe(0);
@@ -114,10 +114,10 @@ describe('Phase 7 break', () => {
 
   it('pending user login shows the API message', async () => {
     const email = `${uid('p').toLowerCase()}@test.com`;
-    await as().post('/auth/signup', { name: 'Pend', email, password: 'secret1' });
+    await as().post('/auth/signup', { name: 'Pend', email, password: 'Secret#123' });
     renderApp('/login');
     await type('Email', email);
-    await type('Password', 'secret1');
+    await type('Password', 'Secret#123');
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/pending/i);
   });

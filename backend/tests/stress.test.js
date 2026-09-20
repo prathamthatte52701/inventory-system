@@ -18,9 +18,9 @@ const pct = (a, p) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.f
   // ---- users ----
   const users = [{ name: 'admin', tok: h.admin }, { name: 'bob', tok: h.user }];
   for (const n of ['carol', 'dave', 'erin']) {
-    const su = await call('POST', '/auth/signup', { name: n, email: `${n}@test.com`, password: 'secret1' });
+    const su = await call('POST', '/auth/signup', { name: n, email: `${n}@test.com`, password: 'Secret#123' });
     await call('PATCH', `/users/${su.b.id}/approve`, undefined, h.admin);
-    users.push({ name: n, tok: (await call('POST', '/auth/login', { email: `${n}@test.com`, password: 'secret1' })).token });
+    users.push({ name: n, tok: (await call('POST', '/auth/login', { email: `${n}@test.com`, password: 'Secret#123' })).token });
   }
   const bobId = (await call('GET', '/auth/me', undefined, h.user)).b.id;
 
