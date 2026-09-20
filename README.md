@@ -47,7 +47,8 @@ An automated inventory system for a single location. It records material movemen
 | **Ledger corrections** | An admin corrects a movement by posting a **reversal** plus a **corrected entry**. The original is never rewritten; it is only marked as corrected. |
 | **Materials search** | The Materials page filters live by Material ID or description (case-insensitive) and by stock status (All / Available / Low Stock / Out of Stock); the two filters combine. |
 | **Dashboard** | Total materials, total stock value, low-stock and out-of-stock counts, per-material status. |
-| **Reports** | Stock-value Excel + PDF, movement-history Excel (filter by material and date range). |
+| **Stock import** | Any logged-in user uploads an Excel (`.xlsx`) or Word (`.docx`, best effort) stock sheet, reviews a **preview** (nothing is written yet), fixes what can be fixed, then commits. See *Stock import* below. |
+| **Reports** | Stock-value Excel + PDF, movement-history Excel (filter by material and date range), and a **daily per-material stock summary** (date picker on Reports, one-click button on the Dashboard). |
 | **Admin tools** | Approve/reject signups, promote/demote users, audit log of every write. |
 
 ## How it works
@@ -245,6 +246,33 @@ All the money logic lives in one function, [`backend/utils/costing.js`](backend/
 
 **OUT beyond stock is rejected.** A live OUT is checked against the current balance inside the per-material lock before anything is written: `Cannot record OUT of <q>: only <n> <unit> available.` (exactly equal to stock is fine). A back-dated entry is inserted, the ledger is replayed, and if any balance would newly go negative the entry is deleted, the replay is re-run so every movement and the material return to their previous state, and the request fails with `Cannot insert this back-dated OUT: it would make stock negative on <date> after replay.` Negative balances that already exist in older data are left as they are (the `exceededStock` field stays on the schema for them) and are never treated as a new violation. The next IN into zero stock restarts the average at the entered rate.
 
+## Stock import
+
+The import is how stock gets into the system in bulk. It is two stateless calls: **preview** parses the file and returns a full plan as JSON without touching the database; the browser holds the plan, lets the user fix it, and posts it back to **commit**. The server remembers nothing in between.
+
+**The uploaded file is never stored.** It is read from memory (multer memory storage, 10 MB limit), parsed, and discarded when the request ends. The only things ever written are real Materials and Movements, one small `ImportBatch` metadata record per commit (filename, who, counts, never the rows) and one `IMPORT_COMMIT` audit entry.
+
+**Who:** any logged-in approved user, like `POST /movements`. Importing may auto-create materials even though `POST /materials` is admin-only; that exception is deliberate, and the auto-created materials are flagged so someone can fix them.
+
+**File format.** Excel is the fully tested path: columns are matched by header text (case-insensitive, any order): `EDP No, Size, Stock Qty, Receipt Qty, Rate, Issue Qty, Balance Qty, Receive Date, Issue Date`. Legacy `.xls` cannot be read; re-save it as `.xlsx` (the upload is rejected with that message). Word is **best effort**: the first table in the document is used and its header row must contain all nine headers exactly; there is no fuzzy matching, and anything else is rejected with `Could not find a table with columns ... - got: <what it found>`. Word only reads the first table.
+
+**How a row is read.**
+- One row makes up to two movements: an **IN** (Receipt Qty + Receive Date + Rate) and an **OUT** (Issue Qty + Issue Date). A blank or zero side is skipped.
+- **Stock Qty / Rate** only matter the first time an EDP appears and does not exist yet: the material is auto-created with `materialId` = EDP, description = Size, unit = **`TBD`** (never guessed), and those values as its opening stock. For an EDP that already exists, Stock Qty is ignored; the system's own balance is the truth.
+- **Balance Qty** is never stored. If it differs from the balance the system computes, the preview shows an informational warning and nothing more.
+- Dates accept real Excel dates, `YYYY-MM-DD`, and day-first `DD/MM/YYYY` or `DD-MM-YYYY`.
+- A bad row (missing EDP, non-numeric or negative quantity, bad date) is listed as unreadable and skipped; the rest of the file still previews. An IN with no rate is shown as **rejected** so the user can type the rate in the preview.
+
+**Statuses:** `ok`, `new-material` (will be created, on an auto-created material), `duplicate-skip`, `rejected` (with the reason).
+- **Duplicates:** a movement is skipped if the same material already has a movement with the same type, quantity and calendar day (and, for IN, the same rate). An identical row earlier in the same file counts too. Re-uploading the same file therefore creates nothing.
+- **OUT beyond stock** is rejected in the preview with the same rule as manual entry (also for back-dated rows, judged against the replayed history), so it is visible before committing.
+
+**Commit is server-authoritative and partial.** The server ignores the statuses the browser sends and re-validates every row against the current database (stock may have changed since the preview). Each material's movements are then posted oldest first while holding that material's lock, through the one shared movement-creation function that `POST /movements` uses, so costing, back-dated recalculation and the OUT rule are identical to manual entry. Anything that fails is reported and the rest still go through; the response lists exactly which rows were created, skipped as duplicates, or failed and why, plus every auto-created material (unit `TBD`: go set the real unit on the Materials page).
+
+## Daily stock summary
+
+`GET /api/reports/daily-summary?date=YYYY-MM-DD` streams an Excel file with one row for **every active material**, including ones with no movement that day: EDP No, Size, Rate, Opening, Receipt, Issue, Balance, Status. Receipt is the sum of that day's INs, Issue the sum of that day's OUTs, and Balance the closing balance at the end of the day (a material with no movement that day simply holds its balance, with Receipt and Issue at 0). A RETURN changes the balance but is counted in neither column. Days are UTC calendar days.
+
 ## API reference
 
 All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{ "message": "…" }`, and validation errors also carry `errors: [{ field, message }]`.
@@ -269,6 +297,10 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 | `GET` | `/reports/dashboard` | approved | |
 | `GET` | `/reports/stock-value/excel` · `/pdf` | approved | File download. |
 | `GET` | `/reports/movements/excel?material=&from=&to=` | approved | Date-only `to` is inclusive. |
+| `GET` | `/reports/daily-summary?date=YYYY-MM-DD` | approved | Every active material, with that day's Receipt / Issue and closing Balance. |
+| `POST` | `/imports/preview` | approved | Multipart, field `file` (`.xlsx` / `.docx`). Returns the plan; writes nothing. |
+| `POST` | `/imports/commit` | approved | Body `{ filename, materials, movements }` (the reviewed plan). Partial, re-validated commit; audited as `IMPORT_COMMIT`. |
+| `GET` | `/imports` | approved | Paginated import history (date, filename, who, counts). |
 
 ## Testing
 
@@ -291,6 +323,9 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 | OUT rejection | `backend/tests/outReject.test.js` | Live and back-dated rejection, exact-equal boundary, byte-for-byte restore after a rejected back-dated entry, concurrent OUTs through the lock |
 | Corrections | `backend/tests/corrections.test.js` | Reversal + corrected entry for IN/OUT/RETURN, original frozen, single-correction rule, no partial state on failure, audit trail, replay agrees with stored values |
 | Materials filter | `frontend/tests/materialsFilter.test.jsx` | ID / description / status filters, AND-combination, no-match state and clearing |
+| Stock import | `backend/tests/import.test.js` | Mixed-file classification, duplicates, re-upload, OUT rejection, back-dated parity with manual entry, TBD materials, Word success/failure, partial re-validated commit, audit + batch record, access |
+| Daily report | `backend/tests/dailyReport.test.js` | Summed Receipt/Issue, materials with no movement that day, inactive excluded, empty days, RETURN handling |
+| Import page / daily report UI | `frontend/tests/import.test.jsx`, `frontend/tests/dailyReport.test.jsx` | Preview rows and statuses, inline rate fix, commit rule, server-side result summary, date-picker download |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
 | Admin backend | `backend/tests/admin.test.js` | `GET /audit` (filters, pagination, injection guards), `GET /analytics/*`, `GET /users/:id/activity`, admin-only access |
 | Fixes & limits | `backend/tests/fixes.test.js` | Login lockout (5 attempts / 15 min, survives restarts and other processes), movement pagination + streamed exports, httpOnly cookie session (Set-Cookie flags, logout revocation, CORS credentials), DB-level material lock incl. a crashed holder and two real processes |
