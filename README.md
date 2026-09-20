@@ -2,7 +2,7 @@
 
 # 📦 Inventory Management System
 
-**Material master · Stock IN / OUT / RETURN · Weighted-average costing · Editable ledger with full auto-recalculation · Live dashboard · Excel & PDF reports**
+**Material master · Stock IN / OUT / RETURN · Weighted-average costing · Ledger corrections by reversal (nothing is ever rewritten) · Live dashboard · Excel & PDF reports**
 
 Node.js · Express 5 · MongoDB Atlas · React 19 · Vite
 
@@ -42,9 +42,10 @@ An automated inventory system for a single location. It records material movemen
 |---|---|
 | **Auth** | Open signup, but an account cannot log in until an admin approves it. JWT sessions. Approval status is re-checked on **every** request, so revoking a user cuts access immediately. |
 | **Material master** | Unique uppercase IDs, unit, opening quantity/rate, minimum quantity. Admin-only create/edit. **Soft delete only**: there is no hard-delete endpoint anywhere. |
-| **Stock movement** | IN / OUT / RETURN by any approved user. OUT past available stock is *never blocked*: it goes through, is flagged `exceededStock`, and returns a warning. |
+| **Stock movement** | IN / OUT / RETURN by any approved user. An OUT larger than available stock is **rejected** (`400`, nothing recorded), both for live entries and for back-dated ones (see below). |
 | **Costing** | Weighted-average rate on IN. OUT and RETURN use the current average. IN records the amount *actually paid*, not the blended rate. |
-| **Ledger editing** | Admin edits any movement (even the first) and the system replays every movement of that material in order. |
+| **Ledger corrections** | An admin corrects a movement by posting a **reversal** plus a **corrected entry**. The original is never rewritten; it is only marked as corrected. |
+| **Materials search** | The Materials page filters live by Material ID or description (case-insensitive) and by stock status (All / Available / Low Stock / Out of Stock); the two filters combine. |
 | **Dashboard** | Total materials, total stock value, low-stock and out-of-stock counts, per-material status. |
 | **Reports** | Stock-value Excel + PDF, movement-history Excel (filter by material and date range). |
 | **Admin tools** | Approve/reject signups, promote/demote users, audit log of every write. |
@@ -214,7 +215,7 @@ For a production build: `npm run build` in either app (output in `frontend/dist`
 | Record IN / OUT / RETURN | | ✅ | ✅ |
 | Download reports | | ✅ | ✅ |
 | Create / edit / (de)activate materials | | ❌ 403 | ✅ |
-| Edit a ledger movement | | ❌ 403 | ✅ |
+| Correct a ledger movement | | ❌ 403 | ✅ |
 | Approve / reject signups, change roles | | ❌ 403 | ✅ |
 
 The frontend hides admin controls and redirects admin-only URLs, but the **API enforces every rule independently**. The UI is a convenience, not the security boundary.
@@ -240,9 +241,9 @@ All the money logic lives in one function, [`backend/utils/costing.js`](backend/
 | 3 | OUT 30 | ₹12,400 | 120 | ₹413.33 |
 | 4 | RETURN 20 | ₹8,266.67 | 140 | ₹413.33 |
 
-**Editing history.** Change movement #1 from 100 to 200 units and the engine replays from the material's opening baseline: #2 becomes `(200·400 + 50·440)/250 = ₹408`, #3 is priced at ₹408 with balance `220`, and the material ends at `220 @ ₹408`.
+**Correcting history.** The ledger is immutable. "Correcting" movement #1 (100 -> 200 units) posts an OUT of 100 that reverses it and then a new IN of 200; #1 itself keeps its original quantity, rate, amount and balance and is only flagged `isEdited`. Both new rows carry `correctionOf` pointing at #1, and the reversal also has `isReversal: true`. The reversal is built mechanically: IN -> OUT of the same quantity, OUT -> IN of the same quantity at the rate that OUT was costed at, RETURN -> OUT. Weighted-average costing depends on the order of movements, so when other movements happened in between, the average going forward is close to, but not bit-for-bit, what rewriting history would have produced. That is how a reversing ledger works, and the original is never quietly recalculated to hide it.
 
-**Negative stock is allowed.** An OUT larger than stock succeeds, sets `exceededStock`, and returns a `warning`. The next IN into zero or negative stock restarts the average at the entered rate.
+**OUT beyond stock is rejected.** A live OUT is checked against the current balance inside the per-material lock before anything is written: `Cannot record OUT of <q>: only <n> <unit> available.` (exactly equal to stock is fine). A back-dated entry is inserted, the ledger is replayed, and if any balance would newly go negative the entry is deleted, the replay is re-run so every movement and the material return to their previous state, and the request fails with `Cannot insert this back-dated OUT: it would make stock negative on <date> after replay.` Negative balances that already exist in older data are left as they are (the `exceededStock` field stays on the schema for them) and are never treated as a new violation. The next IN into zero stock restarts the average at the entered rate.
 
 ## API reference
 
@@ -262,9 +263,9 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 | `POST` | `/materials` | admin | 409 on duplicate ID. |
 | `PUT` | `/materials/:id` | admin | 409 if changing opening qty/rate once movements exist. |
 | `PATCH` | `/materials/:id/deactivate` · `/reactivate` | admin | Idempotent. There is **no DELETE**. |
-| `POST` | `/movements` | approved | `{ material, type, quantity, rate?, movementDate?, note? }`. `rate` is required for IN and ignored otherwise. Returns `{ movement, material, warning? }`. |
+| `POST` | `/movements` | approved | `{ material, type, quantity, rate?, movementDate?, note? }`. `rate` is required for IN and ignored otherwise. Returns `{ movement, material }`; `400` if an OUT exceeds available stock. |
 | `GET` | `/movements?material=` | approved | Sorted by date, then creation time. |
-| `PUT` | `/movements/:id` | admin | Edits, then replays the material's whole ledger. |
+| `PUT` | `/movements/:id` | admin | Correction: posts a reversal + a corrected entry and marks the original as corrected. Body fields (`type`, `quantity`, `enteredRate`, `movementDate`, `note`) default to the original's. Returns `{ original, reversal, corrected, material }`. `400` if the original was already corrected, is itself a reversal/correction, or either new entry would make stock negative (nothing is left behind). Audited as `MOVEMENT_CORRECTION`. |
 | `GET` | `/reports/dashboard` | approved | |
 | `GET` | `/reports/stock-value/excel` · `/pdf` | approved | File download. |
 | `GET` | `/reports/movements/excel?material=&from=&to=` | approved | Date-only `to` is inclusive. |
@@ -284,9 +285,12 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 |---|---|---|
 | Models | `backend/tests/phase1.test.js` | Schema validators, virtuals, status thresholds |
 | Auth & Materials | `backend/tests/api.test.js` | Signup/approval flow, JWT tampering, 403s, seed idempotency, material CRUD rules |
-| Movements & Ledger | `backend/tests/movements.test.js` | Costing rules, negative stock, concurrency, back-dated entries, edit + replay |
+| Movements & Ledger | `backend/tests/movements.test.js` | Costing rules, OUT rejection, concurrency, back-dated entries, corrections |
 | Reports | `backend/tests/reports.test.js` | Dashboard numbers, xlsx/pdf headers and rows, empty data, bad date ranges |
 | Roles | `backend/tests/roles.test.js` | Promote/demote, self-change block |
+| OUT rejection | `backend/tests/outReject.test.js` | Live and back-dated rejection, exact-equal boundary, byte-for-byte restore after a rejected back-dated entry, concurrent OUTs through the lock |
+| Corrections | `backend/tests/corrections.test.js` | Reversal + corrected entry for IN/OUT/RETURN, original frozen, single-correction rule, no partial state on failure, audit trail, replay agrees with stored values |
+| Materials filter | `frontend/tests/materialsFilter.test.jsx` | ID / description / status filters, AND-combination, no-match state and clearing |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
 | Admin backend | `backend/tests/admin.test.js` | `GET /audit` (filters, pagination, injection guards), `GET /analytics/*`, `GET /users/:id/activity`, admin-only access |
 | Fixes & limits | `backend/tests/fixes.test.js` | Login lockout (5 attempts / 15 min, survives restarts and other processes), movement pagination + streamed exports, httpOnly cookie session (Set-Cookie flags, logout revocation, CORS credentials), DB-level material lock incl. a crashed holder and two real processes |
@@ -357,7 +361,7 @@ These were **not** specified in the requirements; here is what was chosen and wh
 1. Emails are stored lowercase and trimmed, so `Bob@X.com` and `bob@x.com` are the same account.
 2. bcrypt cost factor is 10. `description` and `unit` are required on materials.
 3. Every schema has `createdAt`/`updatedAt` timestamps. `AuditLog` has `createdAt` only.
-4. `Material.currentQuantity` is allowed to be **negative** (added in Phase 4; it was `min 0` in Phase 1) because OUT beyond stock is permitted. The other numeric fields keep `min 0`.
+4. `Material.currentQuantity` has no `min 0` so that negative balances in older data stay readable; new OUTs that would cause one are rejected. The other numeric fields keep `min 0`.
 5. The `status` virtual treats any quantity `≤ 0` (including negative) as OUT_OF_STOCK.
 
 ### Auth & security (Phase 2)
@@ -388,13 +392,13 @@ These were **not** specified in the requirements; here is what was chosen and wh
 26. A movement and its material update are two writes; if the second fails, the movement is deleted.
 27. A back-dated `movementDate` triggers a replay so later movements stay correct.
 
-### Ledger editing (Phase 5)
-28. Only quantity, type, rate, date and note are editable. Material, amount, balance and creator are derived or fixed.
-29. `isEdited` is set only when a value actually changed. A no-op edit still runs the replay and stays "not edited".
-30. Changing a movement to IN requires a rate. Changing away from IN clears `enteredRate`.
-31. Editing a movement of an inactive material is allowed (admin correction).
-32. An edit that makes stock negative is allowed and flagged `exceededStock`, consistent with live entry.
-33. On both POST and PUT, a rate is only read when the movement is (or becomes) an IN; on OUT/RETURN it is ignored, never rejected.
+### Ledger corrections
+28. Only quantity, type, rate, date and note can be supplied. Material, amount, balance and creator are derived or fixed; other fields in the body are ignored.
+29. A correction is always a reversal plus a corrected entry, even when the values are unchanged. The original gets `isEdited`, `lastEditedBy` and `lastEditedAt` and nothing else about it changes (its own stored fields; the running balance of any row after a back-dated insert is still re-derived by the replay, which is how the ledger works).
+30. Changing a movement to IN requires a rate.
+31. Correcting a movement of an inactive material is allowed (admin correction).
+32. Both entries go through the same OUT check as a live movement. If either would make stock negative the whole correction is refused and nothing is left behind.
+33. The corrected entry is dated when it is posted (right after the reversal) unless the admin picks a date; its note defaults to `Correction of movement <id>` when none is given. An original can be corrected once; a reversal or a corrected entry can never be corrected.
 
 ### Reports (Phase 6)
 34. Dashboard, stock-value Excel and PDF cover **active** materials only.
