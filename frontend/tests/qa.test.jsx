@@ -212,13 +212,13 @@ describe('Round 4 · numbers: client and API agree', () => {
     await waitFor(() => expect(screen.getByTestId('balance')).toHaveTextContent('9.5')); // decimal handled exactly
     expect(calls(spy, '/movements')).toBe(1);
 
-    await type('Quantity', '1e9'); // the documented ceiling: allowed by both layers, goes negative with a warning
+    await type('Quantity', '1e9'); // the documented ceiling: passes client validation but the API rejects it (exceeds stock)
     await userEvent.click(screen.getByRole('button', { name: 'Record Movement' }));
-    expect(await screen.findByText(/exceeds available stock/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Cannot record OUT of 1000000000: only 9\.5 .* available/);
     expect(calls(spy, '/movements')).toBe(2);
     const final = (await direct.get(`/materials/${m._id}`)).data;
     expect(Number.isFinite(final.currentQuantity)).toBe(true);
-    expect(final.currentQuantity).toBeCloseTo(9.5 - 1e9, 3);
+    expect(final.currentQuantity).toBeCloseTo(9.5, 3); // rejected: balance unchanged
   });
 
   it('rate field: negative / huge / blank rejected for IN, accepted values reach the API unchanged', async () => {

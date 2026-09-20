@@ -83,7 +83,6 @@ export default function Movement() {
       {error && <Alert variant="error" role="alert" className="mt-4">{error}</Alert>}
       {result && (
         <div className="mt-4 grid gap-3">
-          {result.warning && <Alert variant="warning" role="status">{result.warning}</Alert>}
           <Alert variant="success" role="status">
             Recorded {result.movement.type} of {fmt(result.movement.quantity)} {result.material.unit} for {result.material.materialId}
             {' '}(amount ₹{fmt(result.movement.amount)}). New balance: <b data-testid="balance">{fmt(result.movement.balanceAfter)}</b> {result.material.unit}.

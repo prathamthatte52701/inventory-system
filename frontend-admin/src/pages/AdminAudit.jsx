@@ -8,7 +8,7 @@ import { PageHeader, Pager } from '@/components/ui/page';
 import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const ENTITIES = ['Material', 'Movement', 'User'];
-const ACTIONS = ['LOGIN', 'LOGOUT', 'SIGNUP', 'MATERIAL_CREATE', 'MATERIAL_UPDATE', 'MOVEMENT_CREATE', 'MOVEMENT_EDIT', 'USER_APPROVE', 'USER_REJECT', 'USER_ROLE_CHANGE', 'USER_DEACTIVATE', 'USER_REACTIVATE'];
+const ACTIONS = ['LOGIN', 'LOGOUT', 'SIGNUP', 'MATERIAL_CREATE', 'MATERIAL_UPDATE', 'MOVEMENT_CREATE', 'MOVEMENT_CORRECTION', 'MOVEMENT_EDIT', 'USER_APPROVE', 'USER_REJECT', 'USER_ROLE_CHANGE', 'USER_DEACTIVATE', 'USER_REACTIVATE'];
 const PAGE_SIZE = 50;
 const NONE = { entityType: '', action: '', from: '', to: '' };
 

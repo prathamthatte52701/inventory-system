@@ -70,7 +70,7 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
 
   return (
     <>
-      <PageHeader title={title} description={editable ? 'Correct a movement; every later balance and rate is recalculated automatically.' : 'Every stock movement, oldest first.'} />
+      <PageHeader title={title} description={editable ? 'Correct a movement: the original stays as recorded, and a reversal plus a corrected entry are posted.' : 'Every stock movement, oldest first.'} />
       <div className="mb-4 max-w-sm">
         <Field label="Filter by material">
           <Select value={filter} onChange={(e) => pickFilter(e.target.value)}>
@@ -89,13 +89,14 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
           <tbody>
             {rows.map((m) => {
               const editing = edit?.id === m._id;
+              const locked = m.isEdited || m.isReversal || !!m.correctionOf; // corrections are final: only an original can be corrected, once
               return (
                 <Tr key={m._id} data-testid={`row-${m._id}`} className={editing ? 'bg-primary/5 even:bg-primary/5' : ''}>
                   <Td className="whitespace-nowrap">{editing ? <Input type="date" aria-label="Date" className="h-8 w-36" value={edit.date} onChange={set('date')} /> : day(m.movementDate)}</Td>
                   <Td className="font-medium">{m.material?.materialId}</Td>
                   <Td>{editing
                     ? <Select aria-label="Type" className="h-8 w-24" value={edit.type} onChange={set('type')}><option>IN</option><option>OUT</option><option>RETURN</option></Select>
-                    : <span className="inline-flex items-center gap-1.5">{m.type}{m.isEdited && <span className="text-muted/70" title="edited"> ✎</span>}{m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}</span>}</Td>
+                    : <span className="inline-flex items-center gap-1.5">{m.type}{m.isEdited && <span className="text-muted/70" title="corrected — see linked entries below"> ✎</span>}{m.isReversal && <Badge tone="amber" title="reversal of an earlier movement">reversal</Badge>}{m.correctionOf && !m.isReversal && <Badge tone="blue" title="corrected entry">correction</Badge>}{m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}</span>}</Td>
                   <Td num>{editing ? <Input type="number" step="any" aria-label="Quantity" className="h-8 w-20 text-right" value={edit.quantity} onChange={set('quantity')} /> : fmt(m.quantity)}</Td>
                   <Td num>{editing && edit.type === 'IN'
                     ? <Input type="number" step="any" aria-label="Rate" className="h-8 w-20 text-right" value={edit.rate} onChange={set('rate')} />
@@ -109,7 +110,7 @@ export default function LedgerTable({ editable = false, title = 'Ledger' }) {
                       <span className="flex gap-2">
                         {editing
                           ? <><Button variant="default" size="sm" onClick={save}>Save</Button><Button size="sm" onClick={() => setEdit(null)}>Cancel</Button></>
-                          : <Button size="sm" onClick={() => startEdit(m)} aria-label={`Edit movement ${m._id}`}>Edit</Button>}
+                          : <Button size="sm" disabled={locked} title={locked ? (m.isEdited ? 'Already corrected' : 'Corrections cannot be corrected') : undefined} onClick={() => startEdit(m)} aria-label={`Edit movement ${m._id}`}>Edit</Button>}
                       </span>
                     </Td>
                   )}

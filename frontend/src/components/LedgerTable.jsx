@@ -60,7 +60,7 @@ export default function LedgerTable({ title = 'Ledger' }) {
                 <Td className="font-medium">{m.material?.materialId}</Td>
                 <Td>
                   <span className="inline-flex items-center gap-1.5">
-                    {m.type}{m.isEdited && <span className="text-muted" title="edited"> ✎</span>}
+                    {m.type}{m.isEdited && <span className="text-muted" title="corrected — see linked entries below"> ✎</span>}{m.isReversal && <Badge tone="amber" title="reversal of an earlier movement">reversal</Badge>}{m.correctionOf && !m.isReversal && <Badge tone="blue" title="corrected entry">correction</Badge>}
                     {m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}
                   </span>
                 </Td>

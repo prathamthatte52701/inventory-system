@@ -159,7 +159,7 @@ describe('Phase 7 break', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/rate is required/i);
   });
 
-  it('OUT exceeding stock still submits, shows API warning and negative balance', async () => {
+  it('OUT exceeding stock is rejected with the API message; nothing recorded, balance unchanged', async () => {
     const api = await adminApi();
     const id = uid('EX');
     await api.post('/materials', { materialId: id, description: 'Exceed', unit: 'Bag', openingQuantity: 140, openingRate: 100 });
@@ -170,10 +170,10 @@ describe('Phase 7 break', () => {
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'OUT');
     await type('Quantity', '500');
     await userEvent.click(screen.getByRole('button', { name: 'Record Movement' }));
-    const warn = await screen.findByText(/exceeds available stock/i);
-    expect(warn).toHaveTextContent(new RegExp(id));
-    expect(screen.getByTestId('balance')).toHaveTextContent('-360');
-    expect(screen.queryByRole('alert')).toBeNull(); // not an error
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cannot record OUT of 500: only 140 Bag available.');
+    const mat = (await api.get('/materials')).data.find((x) => x.materialId === id);
+    expect(mat.currentQuantity).toBe(140);
+    expect((await api.get('/movements', { params: { material: mat._id } })).data.data.filter((x) => x.type === 'OUT')).toHaveLength(0);
   });
 
   it('API error on movement (inactive material) is shown, not thrown', async () => {
