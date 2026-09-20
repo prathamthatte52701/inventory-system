@@ -2,13 +2,14 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-const alertVariants = cva('flex items-start gap-2.5 rounded-lg border px-4 py-3 text-sm', {
+// Body text stays --text-primary for readability; the tone shows in the border, tint and icon.
+const alertVariants = cva('flex items-start gap-2.5 rounded-lg border px-4 py-3 text-sm text-fg', {
   variants: {
     variant: {
-      error: 'border-red-200 bg-red-50 text-red-800',
-      warning: 'border-amber-200 bg-amber-50 text-amber-900',
-      success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-      info: 'border-sky-200 bg-sky-50 text-sky-800',
+      error: 'border-err/45 bg-err/10 [&>svg]:text-err shadow-[0_0_20px_-10px_var(--err)]',
+      warning: 'border-warn/45 bg-warn/10 [&>svg]:text-warn shadow-[0_0_20px_-10px_var(--warn)]',
+      success: 'border-ok/45 bg-ok/10 [&>svg]:text-ok shadow-[0_0_20px_-10px_var(--ok)]',
+      info: 'border-info/45 bg-info/10 [&>svg]:text-info shadow-[0_0_20px_-10px_var(--info)]',
     },
   },
   defaultVariants: { variant: 'info' },

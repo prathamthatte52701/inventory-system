@@ -71,9 +71,9 @@ export default function Movement() {
             <Field label="Date"><Input type="date" value={f.movementDate} onChange={set('movementDate')} /></Field>
             <Field label="Note"><Input value={f.note} onChange={set('note')} /></Field>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
             {selected
-              ? <p className="text-sm text-slate-500">Available: <span className="font-medium text-slate-700">{fmt(selected.currentQuantity)} {selected.unit}</span> @ ₹{fmt(selected.currentRate)}</p>
+              ? <p className="text-sm text-muted">Available: <span className="font-medium text-fg">{fmt(selected.currentQuantity)} {selected.unit}</span> @ ₹{fmt(selected.currentRate)}</p>
               : <span />}
             <Button variant="default" disabled={busy}>Record Movement</Button>
           </div>

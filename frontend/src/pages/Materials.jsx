@@ -26,7 +26,7 @@ export default function Materials() {
           </tr></thead>
           <tbody>
             {items.map((m) => (
-              <Tr key={m._id} className={m.isActive ? '' : 'text-slate-400'}>
+              <Tr key={m._id} className={m.isActive ? '' : 'text-muted/70'}>
                 <Td className="font-medium">{m.materialId}{!m.isActive && ' (inactive)'}</Td><Td>{m.description}</Td><Td>{m.unit}</Td>
                 <Td num>{fmt(m.currentQuantity)}</Td><Td num>₹{fmt(m.currentRate)}</Td>
                 <Td num>{fmt(m.minimumQuantity)}</Td>

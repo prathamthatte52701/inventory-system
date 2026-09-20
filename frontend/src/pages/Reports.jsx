@@ -38,15 +38,15 @@ export default function Reports() {
       <div className="grid gap-5">
         <Card className="p-5">
           <CardTitle>Stock value</CardTitle>
-          <p className="mb-4 mt-1 text-sm text-slate-500">Current quantity, rate and value of every active material.</p>
+          <p className="mb-4 mt-1 text-sm text-muted">Current quantity, rate and value of every active material.</p>
           <div className="flex flex-wrap gap-3">
-            <Button disabled={busy} onClick={() => download('/reports/stock-value/excel')}><FileSpreadsheet className="h-4 w-4 text-emerald-600" aria-hidden="true" />Download Stock Value (Excel)</Button>
-            <Button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}><FileText className="h-4 w-4 text-red-600" aria-hidden="true" />Download Stock Value (PDF)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/stock-value/excel')}><FileSpreadsheet className="h-4 w-4 text-ok" aria-hidden="true" />Download Stock Value (Excel)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/stock-value/pdf')}><FileText className="h-4 w-4 text-err" aria-hidden="true" />Download Stock Value (PDF)</Button>
           </div>
         </Card>
         <Card className="p-5">
           <CardTitle>Movement history</CardTitle>
-          <p className="mb-4 mt-1 text-sm text-slate-500">Every IN, OUT and RETURN; narrow it by material and date range.</p>
+          <p className="mb-4 mt-1 text-sm text-muted">Every IN, OUT and RETURN; narrow it by material and date range.</p>
           <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Material">
               <Select value={f.material} onChange={(e) => setF({ ...f, material: e.target.value })}>
@@ -56,7 +56,7 @@ export default function Reports() {
             </Field>
             <Field label="From"><Input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></Field>
             <Field label="To"><Input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></Field>
-            <Button disabled={busy} onClick={() => download('/reports/movements/excel', params)}><FileSpreadsheet className="h-4 w-4 text-emerald-600" aria-hidden="true" />Download Movement History (Excel)</Button>
+            <Button disabled={busy} onClick={() => download('/reports/movements/excel', params)}><FileSpreadsheet className="h-4 w-4 text-ok" aria-hidden="true" />Download Movement History (Excel)</Button>
           </div>
         </Card>
         {msg && <Alert variant={msg.ok ? 'success' : 'error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</Alert>}

@@ -60,7 +60,7 @@ export default function LedgerTable({ title = 'Ledger' }) {
                 <Td className="font-medium">{m.material?.materialId}</Td>
                 <Td>
                   <span className="inline-flex items-center gap-1.5">
-                    {m.type}{m.isEdited && <span className="text-slate-400" title="edited"> ✎</span>}
+                    {m.type}{m.isEdited && <span className="text-muted/70" title="edited"> ✎</span>}
                     {m.exceededStock && <Badge tone="red" title="exceeded stock">exceeded</Badge>}
                   </span>
                 </Td>
@@ -69,7 +69,7 @@ export default function LedgerTable({ title = 'Ledger' }) {
                 <Td num>₹{fmt(m.amount)}</Td>
                 <Td num>{fmt(m.balanceAfter)}</Td>
                 <Td>{m.createdBy?.name}</Td>
-                <Td className="text-slate-500">{m.note}</Td>
+                <Td className="text-muted">{m.note}</Td>
               </Tr>
             ))}
             {!rows.length && loaded && <EmptyRow cols={9}>No movements yet.</EmptyRow>}

@@ -34,17 +34,17 @@ export default function Login() {
   };
 
   return (
-    <form className="mx-auto mt-12 grid w-full max-w-sm gap-4 rounded-xl border border-slate-200 bg-white p-7 shadow-sm" onSubmit={submit} noValidate>
+    <form className="mx-auto mt-12 grid w-full max-w-sm gap-4 glass neon-border rounded-2xl p-8 shadow-[var(--glow-soft)]" onSubmit={submit} noValidate>
       <div className="grid gap-1">
         <Package className="mb-1 h-7 w-7 text-primary" aria-hidden="true" />
         <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
-        <p className="text-sm text-slate-500">Sign in to manage stock and movements.</p>
+        <p className="text-sm text-muted">Sign in to manage stock and movements.</p>
       </div>
       {error && <Alert variant="error" role="alert">{error}</Alert>}
       <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
       <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
       <Button variant="default" className="w-full" disabled={busy}>Log in</Button>
-      <span className="text-center text-sm text-slate-500">No account? <Link to="/signup" className="font-medium text-primary hover:underline">Sign up</Link></span>
+      <span className="text-center text-sm text-muted">No account? <Link to="/signup" className="font-medium text-primary hover:underline">Sign up</Link></span>
     </form>
   );
 }
