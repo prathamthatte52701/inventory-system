@@ -1,3 +1,5 @@
+import { useId, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const control =
@@ -21,5 +23,29 @@ export function Field({ label, className, children }) {
       {label}
       {children}
     </label>
+  );
+}
+
+// Password input with a show/hide eye. The label uses htmlFor (not wrapping) so the eye button is NOT part of the
+// label text: the input's accessible name stays exactly the label, e.g. "Password".
+export function PasswordField({ label, className, error, ...props }) {
+  const id = useId();
+  const [show, setShow] = useState(false);
+  return (
+    <div className="grid gap-1.5">
+      <label htmlFor={id} className="text-[13px] font-medium tracking-wide text-muted">{label}</label>
+      <div className="relative">
+        <input id={id} type={show ? 'text' : 'password'} className={cn(control, 'h-9 pr-10', error && 'border-err/70', className)} {...props} />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          aria-label={show ? 'Hide password' : 'Show password'}
+          aria-pressed={show}
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        >
+          {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+        </button>
+      </div>
+    </div>
   );
 }

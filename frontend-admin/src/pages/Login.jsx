@@ -8,7 +8,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import { Alert } from '@/components/ui/alert';
 import { AuthBackdrop } from '@/components/ui/auth-backdrop';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/field';
+import { Field, PasswordField, Input } from '@/components/ui/field';
 
 export default function Login() {
   const { user, ready, denied, login } = useAuth();
@@ -42,13 +42,14 @@ export default function Login() {
       <form className="glass neon-border relative z-10 grid w-full max-w-sm gap-4 rounded-2xl p-8 shadow-[var(--glow-soft)]" onSubmit={submit} noValidate>
         <div className="grid gap-1">
           <ShieldCheck className="mb-1 h-8 w-8 text-primary drop-shadow-[0_0_8px_var(--accent-primary)]" aria-hidden="true" />
-          <h1 className="text-2xl font-semibold tracking-tight">Admin sign in</h1>
+          <p className="tech-label neon-text">// secure access</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Admin sign in</h1>
           <p className="text-sm text-muted">Restricted to administrators.</p>
         </div>
         {denied && !error && <Alert variant="error" role="alert">This app is for admins only</Alert>}
         {error && <Alert variant="error" role="alert">{error}</Alert>}
         <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+        <PasswordField label="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
         <Button variant="default" className="w-full" disabled={busy}>Sign in</Button>
       </form>
     </div>

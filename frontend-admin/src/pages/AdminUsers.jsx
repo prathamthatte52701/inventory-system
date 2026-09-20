@@ -80,19 +80,24 @@ export default function AdminUsers() {
             <tbody>
               {users.map((u) => {
                 const self = u._id === me.id;
+                const inactive = u.active === false;
                 const next = u.role === 'admin' ? 'user' : 'admin';
                 return (
                   <Fragment key={u._id}>
                     <Tr>
-                      <Td className="font-medium">{u.name}</Td><Td>{u.email}</Td>
+                      <Td className={inactive ? 'font-medium text-muted' : 'font-medium'}>{u.name}</Td><Td className={inactive ? 'text-muted' : ''}>{u.email}</Td>
                       <Td><Badge tone={u.role === 'admin' ? 'primary' : 'slate'}>{u.role}</Badge></Td>
-                      <Td><Badge tone={STATUS_TONE[u.status] || 'slate'} dot>{u.status}</Badge></Td>
+                      <Td><Badge tone={STATUS_TONE[u.status] || 'slate'} dot>{u.status}</Badge>{' '}<Badge tone={inactive ? 'slate' : 'green'} dot={!inactive}>{inactive ? 'Inactive' : 'Active'}</Badge></Td>
                       <Td>
                         <span className="flex gap-2">
                           <Button size="sm" disabled={self} title={self ? 'You cannot change your own role' : ''}
                             onClick={() => act(() => api.patch(`/users/${u._id}/role`, { role: next }))} aria-label={`Make ${u.email} ${next}`}>
                             Make {next}
                           </Button>
+                          {inactive
+                            ? <Button size="sm" variant="secondary" onClick={() => act(() => api.patch(`/users/${u._id}/reactivate`))} aria-label={`Reactivate ${u.email}`}>Reactivate</Button>
+                            : <Button size="sm" variant="danger" disabled={self} title={self ? 'You cannot deactivate your own account' : ''}
+                                onClick={() => act(() => api.patch(`/users/${u._id}/deactivate`))} aria-label={`Deactivate ${u.email}`}>Deactivate</Button>}
                           <Button size="sm" variant="ghost" onClick={() => toggleDetails(u)} aria-expanded={open?.id === u._id} aria-label={`Details for ${u.email}`}>
                             {open?.id === u._id ? 'Hide' : 'Details'}
                           </Button>

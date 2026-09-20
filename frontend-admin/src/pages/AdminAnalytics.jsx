@@ -9,9 +9,9 @@ import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 const TYPES = ['IN', 'OUT', 'RETURN'];
-// same palette as the badges/alerts (Tailwind emerald / red / sky), so charts read as part of the page
-const COLORS = { IN: '#10b981', OUT: '#ef4444', RETURN: '#0ea5e9' };
-const AXIS = { fontSize: 12, fill: '#64748b' };
+// theme chart tokens (cyan / violet / magenta); CSS vars so the chart follows dark/light
+const COLORS = { IN: 'var(--chart-1)', OUT: 'var(--chart-2)', RETURN: 'var(--chart-3)' };
+const AXIS = { fontSize: 12, fill: 'var(--text-muted)' };
 
 export default function AdminAnalytics() {
   const [range, setRange] = useState({ from: isoDay(Date.now() - 29 * 864e5), to: isoDay(Date.now()) });
@@ -64,11 +64,13 @@ export default function AdminAnalytics() {
               <div style={{ width: '100%', height: 300 }} data-testid="volume-chart" className="mt-4">
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 300 }}>
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="bucket" tick={AXIS} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={AXIS} tickLine={false} axisLine={{ stroke: 'var(--border-subtle)' }} />
                     <YAxis tick={AXIS} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }} />
-                    <Legend wrapperStyle={{ fontSize: 13 }} />
+                    <Tooltip cursor={{ fill: 'var(--row-hover)' }}
+                      contentStyle={{ borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-glow)', color: 'var(--text-primary)', fontSize: 13 }}
+                      itemStyle={{ color: 'var(--text-primary)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                    <Legend wrapperStyle={{ fontSize: 13, color: 'var(--text-muted)' }} />
                     {TYPES.map((t) => <Bar key={t} dataKey={t} fill={COLORS[t]} radius={[3, 3, 0, 0]} />)}
                   </BarChart>
                 </ResponsiveContainer>

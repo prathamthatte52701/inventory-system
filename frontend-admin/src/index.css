@@ -27,6 +27,10 @@
   --border-glow: rgba(169, 112, 255, 0.55);
   --border-subtle: rgba(130, 160, 220, 0.17);
 
+  --chart-1: #22e5ff;  /* chart series: cyan, violet, magenta */
+  --chart-2: #b47bff;
+  --chart-3: #ff5cd6;
+
   --ok: #34f5a8;
   --warn: #ffc857;
   --err: #ff6b87;
@@ -61,6 +65,10 @@
   --text-muted: #55637c;
   --border-glow: rgba(124, 58, 237, 0.5);
   --border-subtle: rgba(30, 60, 110, 0.15);
+
+  --chart-1: #0891b2;
+  --chart-2: #7c3aed;
+  --chart-3: #c026d3;
 
   --ok: #0a8f5c;
   --warn: #a86a00;
