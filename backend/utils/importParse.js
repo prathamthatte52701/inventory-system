@@ -6,7 +6,12 @@ const { httpError } = require('./errors');
 
 const HEADERS = ['EDP No', 'Size', 'Stock Qty', 'Receipt Qty', 'Rate', 'Issue Qty', 'Balance Qty', 'Receive Date', 'Issue Date'];
 const KEYS = { 'edp no': 'edp', size: 'size', 'stock qty': 'stock', 'receipt qty': 'receipt', rate: 'rate', 'issue qty': 'issue', 'balance qty': 'balance', 'receive date': 'receiveDate', 'issue date': 'issueDate' };
-const notFound = (got) => httpError(400, `Could not find a table with columns ${HEADERS.join(', ')} — got: ${got}`);
+// Only EDP No and at least one of Receipt Qty / Issue Qty are needed to recognise the header row; the rest are optional.
+const notFound = (got) => httpError(400, `Could not find a table with an "EDP No" column and at least one of "Receipt Qty" or "Issue Qty" (optional: Size, Stock Qty, Rate, Balance Qty, Receive Date, Issue Date) — got: ${got}`);
+const noQty = () => httpError(400, 'File needs at least a Receipt Qty or Issue Qty column');
+const headerIndex = (cells) => { const idx = {}; (cells || []).forEach((h, i) => { const k = KEYS[norm(h)]; if (k && !(k in idx)) idx[k] = i; }); return idx; };
+const isHeader = (idx) => 'edp' in idx && ('receipt' in idx || 'issue' in idx);
+const today = () => new Date().toISOString().slice(0, 10); // the day the file is imported (UTC, like every other movement day)
 
 const blank = (v) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 const norm = (v) => String(v ?? '').trim().toLowerCase();
@@ -37,7 +42,9 @@ function date(v, label) {
 }
 
 // c: raw cell values keyed by field. Returns a parsed row or null (fully blank); throws Error for row problems.
-function parseRow(row, c) {
+// has: which columns exist in the file at all. A whole missing date column defaults to today (row.receiveDefault / issueDefault
+// tell the plan to warn); a date column that exists but is blank on this row is still an error.
+function parseRow(row, c, has) {
   if (Object.values(c).every(blank)) return null;
   const edp = blank(c.edp) ? '' : String(c.edp).trim();
   if (!edp) throw new Error('EDP No is missing');
@@ -48,21 +55,27 @@ function parseRow(row, c) {
     receiveDate: date(c.receiveDate, 'Receive Date'), issueDate: date(c.issueDate, 'Issue Date'),
   };
   try { r.balance = num(c.balance, 'Balance Qty'); } catch { r.balance = null; } // informational only
-  if (r.receipt > 0 && !r.receiveDate) throw new Error('Receive Date is required when Receipt Qty is given');
-  if (r.issue > 0 && !r.issueDate) throw new Error('Issue Date is required when Issue Qty is given');
+  if (r.receipt > 0 && !r.receiveDate) {
+    if (has.receiveDate) throw new Error('Receive Date is required when Receipt Qty is given');
+    r.receiveDate = today(); r.receiveDefault = true;
+  }
+  if (r.issue > 0 && !r.issueDate) {
+    if (has.issueDate) throw new Error('Issue Date is required when Issue Qty is given');
+    r.issueDate = today(); r.issueDefault = true;
+  }
   return r;
 }
 
-// grid: [{ row, cells: [..] }] with grid[0] the header row; null if it lacks any expected header
+// grid: [{ row, cells: [..] }] with grid[0] the header row; null if it is not a usable header row (see isHeader)
 function parseGrid(grid) {
-  const idx = {};
-  (grid[0] ? grid[0].cells : []).forEach((h, i) => { const k = KEYS[norm(h)]; if (k && !(k in idx)) idx[k] = i; });
-  if (Object.keys(idx).length !== HEADERS.length) return null;
+  const idx = headerIndex(grid[0] && grid[0].cells);
+  if (!isHeader(idx)) return null;
+  const has = Object.fromEntries(Object.keys(idx).map((k) => [k, true]));
   const rows = [], errors = [];
   for (const { row, cells } of grid.slice(1)) {
     const c = {};
     for (const k in idx) c[k] = cells[idx[k]];
-    try { const r = parseRow(row, c); if (r) rows.push(r); } catch (e) { errors.push({ row, message: e.message }); }
+    try { const r = parseRow(row, c, has); if (r) rows.push(r); } catch (e) { errors.push({ row, message: e.message }); }
   }
   return { rows, errors };
 }
@@ -94,6 +107,7 @@ async function parseXlsx(buffer) {
     const res = parseGrid(grid.slice(i));
     if (res) return res;
   }
+  if (grid.some((g) => 'edp' in headerIndex(g.cells))) throw noQty(); // an EDP No header exists but there is no quantity column
   throw notFound(grid[0] ? grid[0].cells.map((c) => String(c ?? '').trim()).filter(Boolean).join(', ') || 'no header row' : 'no header row');
 }
 
@@ -108,7 +122,10 @@ async function parseDocx(buffer) {
     row: i + 1, cells: [...tr[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => decode(c[1])),
   }));
   const res = parseGrid(grid);
-  if (!res) throw notFound(grid[0] ? grid[0].cells.join(', ') : 'no table');
+  if (!res) {
+    if (grid[0] && 'edp' in headerIndex(grid[0].cells)) throw noQty();
+    throw notFound(grid[0] ? grid[0].cells.join(', ') : 'no table');
+  }
   return res;
 }
 

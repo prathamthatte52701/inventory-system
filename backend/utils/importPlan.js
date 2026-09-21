@@ -46,8 +46,8 @@ async function buildPlan(rows, parseErrors) {
       materials.push({ edp, description: (r.size || edp).slice(0, 200), unit: 'TBD', openingQuantity: r.stock, openingRate: r.rate ?? 0 });
     if (!perEdp.has(edp)) perEdp.set(edp, []);
     const c = { row: r.row, edp, description: r.size || edp, balance: r.balance };
-    if (r.receipt > 0) perEdp.get(edp).push({ ...c, type: 'IN', quantity: r.receipt, rate: r.rate, date: r.receiveDate, last: !(r.issue > 0) });
-    if (r.issue > 0) perEdp.get(edp).push({ ...c, type: 'OUT', quantity: r.issue, rate: null, date: r.issueDate, last: true });
+    if (r.receipt > 0) perEdp.get(edp).push({ ...c, type: 'IN', quantity: r.receipt, rate: r.rate, date: r.receiveDate, last: !(r.issue > 0), warn: r.receiveDefault ? "No Receive Date column in file — used today's date." : null });
+    if (r.issue > 0) perEdp.get(edp).push({ ...c, type: 'OUT', quantity: r.issue, rate: null, date: r.issueDate, last: true, warn: r.issueDefault ? "No Issue Date column in file — used today's date." : null });
   }
   const newSet = new Set(materials.map((m) => m.edp));
 
@@ -63,6 +63,7 @@ async function buildPlan(rows, parseErrors) {
     cands.sort((a, b) => a.date.localeCompare(b.date) || a.row - b.row || inType(a, b));
     for (const c of cands) {
       const out = { id: `r${c.row}-${c.type}`, row: c.row, edp, description: c.description, type: c.type, quantity: c.quantity, rate: c.rate, movementDate: c.date, newMaterial: isNew };
+      if (c.warn) out.warning = c.warn;
       const skip = (status, reason) => { out.status = status; out.reason = reason; movements.push(out); };
       if (doc && doc.isActive === false) { skip('rejected', 'Material is inactive'); continue; }
       if (c.type === 'IN' && c.rate === null) { skip('rejected', 'IN requires a rate'); continue; }
@@ -74,7 +75,7 @@ async function buildPlan(rows, parseErrors) {
       chain = res.next; fileKeys.add(k);
       out.status = isNew ? 'new-material' : 'ok';
       if (c.last && c.balance !== null && Math.abs(c.balance - res.balanceAfter) > 0.0001)
-        out.warning = `File balance ${c.balance} differs from system balance ${round4(res.balanceAfter)} after this row`;
+        out.warning = [out.warning, `File balance ${c.balance} differs from system balance ${round4(res.balanceAfter)} after this row`].filter(Boolean).join(' | ');
       movements.push(out);
     }
   }

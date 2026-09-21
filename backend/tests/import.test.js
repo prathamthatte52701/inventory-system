@@ -205,13 +205,95 @@ const { HEADERS } = require('../utils/importParse');
     assert.strictEqual(p.b.summary.willCreate, 1); assert.strictEqual(p.b.movements[0].movementDate, '2025-04-01'); assert.strictEqual(p.b.materials[0].edp, 'DX2');
   });
   await t('docx with no table / wrong headers rejected with the specific message', async () => {
-    const head = 'Could not find a table with columns EDP No, Size, Stock Qty, Receipt Qty, Rate, Issue Qty, Balance Qty, Receive Date, Issue Date — got: ';
+    const head = 'Could not find a table with an "EDP No" column and at least one of "Receipt Qty" or "Issue Qty" (optional: Size, Stock Qty, Rate, Balance Qty, Receive Date, Issue Date) — got: ';
     let r = await upload('/imports/preview', await docx(null), 'a.docx'); is(r, 400);
     assert.strictEqual(r.b.message, head + 'no table');
     r = await upload('/imports/preview', await docx([['A', 'B'], ['1', '2']]), 'a.docx'); is(r, 400);
     assert.strictEqual(r.b.message, head + 'A, B');
     r = await upload('/imports/preview', Buffer.from('not a zip'), 'a.docx'); is(r, 400);
     assert.strictEqual(r.b.message, head + 'unreadable document');
+  });
+
+  // ---------- optional columns: only EDP No + one of Receipt Qty / Issue Qty are required ----------
+  const dayNow = () => new Date().toISOString().slice(0, 10);
+  const NOQTY = 'File needs at least a Receipt Qty or Issue Qty column';
+  await t('minimal file (EDP No + Receipt Qty + Receive Date only) is accepted; missing Size/Stock/Rate/Balance behave like blank cells', async () => {
+    const p = await preview(await xlsx([R('MN1', { rec: 5, rd: D('2025-06-01') })], ['EDP No', 'Receipt Qty', 'Receive Date'])); is(p, 200);
+    assert.deepStrictEqual(p.b.parseErrors, []);
+    assert.deepStrictEqual(p.b.materials, [{ edp: 'MN1', description: 'MN1', unit: 'TBD', openingQuantity: 0, openingRate: 0 }]); // no Size -> EDP, no Stock Qty -> 0
+    assert.strictEqual(p.b.movements.length, 1);
+    assert.strictEqual(p.b.movements[0].status, 'rejected'); assert.strictEqual(p.b.movements[0].reason, 'IN requires a rate'); // no Rate column: fixable in the preview
+    assert.strictEqual(p.b.movements[0].movementDate, '2025-06-01');
+    // once the admin supplies the rate, it commits normally
+    const fixed = { ...p.b, movements: p.b.movements.map((x) => ({ ...x, rate: 4, status: 'ok' })) };
+    const c = await commit(fixed); commits++;
+    assert.strictEqual(c.b.summary.created, 1);
+    const m = await Material.findOne({ materialId: 'MN1' }); assert.strictEqual(m.currentQuantity, 5);
+  });
+  await t('Issue-only file (EDP No + Issue Qty + Issue Date) works against an existing material', async () => {
+    const m = await h.newMaterial('MN2', { openingQuantity: 10, openingRate: 3 });
+    const p = await preview(await xlsx([R('MN2', { iss: 4, id: D('2025-06-02') })], ['EDP No', 'Issue Qty', 'Issue Date'])); is(p, 200);
+    assert.deepStrictEqual(p.b.materials, []);
+    assert.strictEqual(p.b.movements[0].status, 'ok'); assert.strictEqual(p.b.movements[0].type, 'OUT');
+    assert(m);
+  });
+  await t('Receive Date COLUMN missing entirely: rows get today\'s date and an informational warning, not an error', async () => {
+    h.assert(await h.newMaterial('MD1', { openingQuantity: 1, openingRate: 1 }));
+    const before = dayNow();
+    const p = await preview(await xlsx([R('MD1', { rec: 3, rate: 2 })], ['EDP No', 'Receipt Qty', 'Rate'])); is(p, 200);
+    const after = dayNow();
+    assert.deepStrictEqual(p.b.parseErrors, []);
+    const mv = p.b.movements[0];
+    assert(mv.movementDate === before || mv.movementDate === after, mv.movementDate);
+    assert.strictEqual(mv.status, 'ok');
+    assert.strictEqual(mv.warning, "No Receive Date column in file — used today's date.");
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.summary.created, 1);
+    const saved = await mongoose.models.Movement.findOne({ note: /row 2/, quantity: 3, type: 'IN' }).sort({ createdAt: -1 });
+    assert.strictEqual(saved.movementDate.toISOString().slice(0, 10), mv.movementDate);
+  });
+  await t('Issue Date COLUMN missing entirely: same rule for OUT rows', async () => {
+    await h.newMaterial('MD2', { openingQuantity: 10, openingRate: 1 });
+    const p = await preview(await xlsx([R('MD2', { iss: 2 })], ['EDP No', 'Issue Qty'])); is(p, 200);
+    assert.deepStrictEqual(p.b.parseErrors, []);
+    assert.strictEqual(p.b.movements[0].warning, "No Issue Date column in file — used today's date.");
+    assert.strictEqual(p.b.movements[0].status, 'ok');
+  });
+  await t('date column present but BLANK on a row is still a per-row error (unchanged)', async () => {
+    await h.newMaterial('MD3', { openingQuantity: 1, openingRate: 1 });
+    const p = await preview(await xlsx([R('MD3', { rec: 3, rate: 2 }), R('MD3', { rec: 1, rate: 2, rd: D('2025-07-01') })], ['EDP No', 'Receipt Qty', 'Rate', 'Receive Date'])); is(p, 200);
+    assert.strictEqual(p.b.parseErrors.length, 1); assert.match(p.b.parseErrors[0].message, /Receive Date is required/);
+    assert.strictEqual(p.b.movements.length, 1); assert(!p.b.movements[0].warning);
+  });
+  await t('a default-date warning sits next to a balance warning without hiding it', async () => {
+    await h.newMaterial('MD4', { openingQuantity: 5, openingRate: 1 });
+    const p = await preview(await xlsx([R('MD4', { rec: 1, rate: 1, bal: 999 })], ['EDP No', 'Receipt Qty', 'Rate', 'Balance Qty'])); is(p, 200);
+    assert.match(p.b.movements[0].warning, /used today's date\./); assert.match(p.b.movements[0].warning, /File balance 999 differs/);
+  });
+  await t('no quantity column at all is rejected with the specific message (EDP No + Size + Rate only; EDP No alone)', async () => {
+    let r = await preview(await xlsx([R('Q1', { size: 'x', rate: 1 })], ['EDP No', 'Size', 'Rate'])); is(r, 400);
+    assert.strictEqual(r.b.message, NOQTY);
+    r = await preview(await xlsx([R('Q2')], ['EDP No'])); is(r, 400);
+    assert.strictEqual(r.b.message, NOQTY);
+  });
+  await t('no EDP No column is rejected even when quantities exist', async () => {
+    const r = await preview(await xlsx([R('Q3', { size: 'x', rec: 1, rd: D('2025-01-01') })], ['Size', 'Receipt Qty', 'Receive Date'])); is(r, 400);
+    assert(r.b.message.startsWith('Could not find a table with an "EDP No" column and at least one of'), r.b.message);
+    assert(r.b.message.endsWith('got: Size, Receipt Qty, Receive Date'), r.b.message);
+  });
+  await t('the same relaxation applies to Word tables (shared parser): dates missing -> today, no quantity column -> rejected', async () => {
+    await h.newMaterial('WD1', { openingQuantity: 1, openingRate: 1 });
+    let p = await upload('/imports/preview', await docx([['EDP No', 'Receipt Qty', 'Rate'], ['WD1', '2', '3']]), 'a.docx'); is(p, 200);
+    assert.strictEqual(p.b.movements[0].movementDate.length, 10); assert.strictEqual(p.b.movements[0].warning, "No Receive Date column in file — used today's date.");
+    p = await upload('/imports/preview', await docx([['EDP No', 'Size'], ['WD1', 'x']]), 'a.docx'); is(p, 400);
+    assert.strictEqual(p.b.message, NOQTY);
+  });
+  await t('a full 9-column file still behaves exactly as before (no default-date warnings)', async () => {
+    await h.newMaterial('FULL1', { openingQuantity: 1, openingRate: 1 });
+    const p = await preview(await xlsx([R('FULL1', { size: 'S', stock: 9, rec: 2, rate: 5, iss: 1, bal: 2, rd: D('2025-08-01'), id: D('2025-08-02') })])); is(p, 200);
+    assert.deepStrictEqual(p.b.parseErrors, []);
+    assert(p.b.movements.every((x) => !x.warning || /File balance/.test(x.warning)));
+    assert.deepStrictEqual(p.b.movements.map((x) => x.movementDate), ['2025-08-01', '2025-08-02']);
   });
 
   await t('.xls / .txt / no file / corrupt xlsx / oversize are rejected 400', async () => {
