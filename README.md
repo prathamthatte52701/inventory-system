@@ -109,6 +109,8 @@ There are two files, and they have different jobs:
 |---|---|---|
 | `backend/.env` | **No**, git-ignored | Your real secrets. It already exists on the machine this was built on. |
 | `backend/.env.example` | **Yes** | Blank template with the same keys, so a fresh clone knows what to fill in. |
+| `backend/.env.test` | **No**, git-ignored | Same keys, but `MONGO_URI` points at a **test** database (see below). The UI test suites use this instead of `.env`. |
+| `backend/.env.test.example` | **Yes** | Blank template for `.env.test`. |
 
 On a new machine:
 
@@ -137,6 +139,14 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
 
 > `backend/.env` also holds Groq API keys as **commented-out** lines (`# GROQ_API_KEY_1=…`). Nothing reads them yet; uncomment them only when a feature needs them.
+
+**Test database isolation.** `frontend/tests/globalSetup.js` and `frontend-admin/tests/globalSetup.js` boot the real backend against a database named `inventory_test_ui` / `inventory_test_ui_admin`. Left alone, that database still lives on whatever cluster `backend/.env`'s `MONGO_URI` points at — the real one. Copy `backend/.env.test.example` to `backend/.env.test` and point its `MONGO_URI` at a differently-named database (same Atlas cluster is fine — e.g. `inventory_management_test`) to keep test runs off the real data entirely:
+
+```bash
+cp backend/.env.test.example backend/.env.test
+```
+
+If `backend/.env.test` doesn't exist, the suites fall back to `backend/.env` with a loud console warning, rather than failing silently. Either way, `backend/utils/testEnvGuard.js` runs first and **refuses to start** if the database it resolved — from either `.env.test`'s `MONGO_URI` or the literal database name the test run is about to use — matches the real database's name or simply doesn't contain "test". This exists because a manual verification script once connected straight to the real `MONGO_URI` and left test users and a test material in production data that had to be found and deleted by hand; the guard is what stops an automated run from doing the same thing.
 
 ### 3. Install
 
@@ -321,7 +331,7 @@ All routes are under `/api`. Send `Authorization: Bearer <token>`. Errors are `{
 
 ## Testing
 
-Everything runs against real HTTP and a real MongoDB. Tests use **throwaway databases** (`inventory_test*`, one per suite, plus `inventory_test_ui` and `inventory_test_ui_admin` for the two UI suites) that they drop when finished, so your real data is never touched.
+Everything runs against real HTTP and a real MongoDB. Tests use **throwaway databases** (`inventory_test*`, one per suite, plus `inventory_test_ui` and `inventory_test_ui_admin` for the two UI suites) that they drop when finished, so your real data is never touched. The two UI suites additionally load `backend/.env.test` if present (see *Environment variables* above) so they connect through a separate test database rather than the real `MONGO_URI`, and refuse to start at all if the resolved database looks like the real one — see `backend/utils/testEnvGuard.js`.
 
 ```bash
 cd backend  && npm test              # every backend suite below except stress
@@ -373,10 +383,10 @@ inventory system/
 │   ├── middleware/                  # auth (requireAuth/requireAdmin) · validate · fields (strict validators)
 │   ├── controllers/                 # auth · user · material · movement · report · audit · analytics
 │   ├── routes/
-│   ├── utils/                       # costing.js (engine + DB lock) · pagination · errors · loginLimiter · cookie · jwt · audit · seedAdmins
+│   ├── utils/                       # costing.js (engine + DB lock) · pagination · errors · loginLimiter · cookie · jwt · audit · seedAdmins · testEnvGuard (refuses to test against the real DB)
 │   ├── tests/
-│   ├── .env                         # real secrets, git-ignored
-│   └── .env.example                 # blank template, committed
+│   ├── .env  .env.test              # real secrets / test-db secrets, both git-ignored
+│   └── .env.example  .env.test.example  # blank templates, committed
 ├── frontend/                        # user app (port 2000)
 │   ├── src/
 │   │   ├── api.js                   # axios instance (cookie session), 401 interceptor, file download
@@ -403,8 +413,9 @@ inventory system/
 - All inputs are type-checked before reaching Mongo, which blocks operator-injection payloads such as `{ "$gt": "" }`.
 - Every number must be a finite value between 0 and 1,000,000,000 and every text field has a length cap, so `NaN`, `Infinity`, arrays, objects and 10,000-character strings are rejected with a 400 before they reach the database.
 - JWTs are pinned to HS256; unknown-email logins take as long as wrong-password ones (no timing oracle); responses carry `X-Content-Type-Options: nosniff`.
-- `backend/.env` is git-ignored. Only the blank `.env.example` is committed.
+- `backend/.env` and `backend/.env.test` are both git-ignored. Only the blank `.env.example` / `.env.test.example` templates are committed.
 - **If a real `.env` value was ever pasted into a chat, ticket or screenshot, rotate it.** That means the Atlas password, `JWT_SECRET` and the API keys.
+- The UI test suites connect through `backend/.env.test`, not `backend/.env`, and `backend/utils/testEnvGuard.js` refuses to run at all if the resolved database looks like the real one — see *Test database isolation* above.
 
 ---
 
