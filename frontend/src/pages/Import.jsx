@@ -12,8 +12,8 @@ import { EmptyRow, Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 
 const day = (d) => String(d ?? '').slice(0, 10);
 const NEEDS_RATE = 'IN requires a rate';
-const TONE = { ok: 'green', 'new-material': 'blue', 'duplicate-skip': 'slate', rejected: 'red' };
-const LABEL = { ok: 'ok', 'new-material': 'new material', 'duplicate-skip': 'duplicate (skip)', rejected: 'rejected' };
+const TONE = { ok: 'green', 'new-material': 'blue', 'duplicate-skip': 'slate', rejected: 'red', 'sync-adjustment': 'amber', 'already-matches': 'slate' };
+const LABEL = { ok: 'ok', 'new-material': 'new material', 'duplicate-skip': 'duplicate (skip)', rejected: 'rejected', 'sync-adjustment': 'adjust', 'already-matches': 'no change' };
 const RES_TONE = { created: 'green', 'skipped-duplicate': 'slate', failed: 'red' };
 const PAGE_SIZE = 20;
 
@@ -72,13 +72,14 @@ export default function Import() {
   });
 
   const reset = () => { setResult(null); setPlan(null); setError(''); };
-  const count = (s) => plan.movements.filter((m) => (s === 'create' ? m.status === 'ok' || m.status === 'new-material' : m.status === s)).length;
+  const count = (s) => plan.movements.filter((m) => (s === 'create' ? m.status === 'ok' || m.status === 'new-material' || m.status === 'sync-adjustment' : m.status === s)).length;
   const create = plan ? count('create') : 0;
   const newMats = plan?.materials.filter((m) => m.unit === 'TBD') ?? [];
+  const isSync = plan?.mode === 'sync';
 
   return (
     <>
-      <PageHeader title="Import" description="Bring in stock movements from an Excel or Word file. Review the preview, then commit." />
+      <PageHeader title="Import" description="Bring in a transaction file (Receipt/Issue) or a current-quantity snapshot from Excel or Word. Review the preview, then commit." />
       {error && <Alert variant="error" role="alert" className="mb-4">{error}</Alert>}
 
       {!result && (
@@ -109,7 +110,8 @@ export default function Import() {
             </Alert>
           )}
           <p data-testid="import-summary" className="text-sm text-fg">
-            {plan.summary.totalRows} rows read · {plan.summary.newMaterials} new materials · {create} will be created · {count('duplicate-skip')} already imported (skipped) · {count('rejected')} rejected — they will be skipped
+            {plan.summary.totalRows} rows read · {plan.summary.newMaterials} new materials · {create} will be created · {count('duplicate-skip')} already imported (skipped)
+            {isSync && <> · {count('already-matches')} already match (no change)</>} · {count('rejected')} rejected — they will be skipped
           </p>
           <TableWrap>
             <Table>
@@ -118,7 +120,8 @@ export default function Import() {
                 {plan.movements.length === 0 && <EmptyRow cols={7}>No movements found in this file.</EmptyRow>}
                 {plan.movements.map((m) => (
                   <Tr key={m.id} data-testid="preview-row">
-                    <Td>{m.edp}</Td><Td>{m.description}</Td><Td>{m.type}</Td><Td num>{fmt(m.quantity)}</Td>
+                    <Td>{m.edp}</Td><Td>{m.description}</Td><Td>{m.type ?? '—'}</Td>
+                    <Td num>{m.status === 'sync-adjustment' ? `${m.delta > 0 ? '+' : ''}${fmt(m.delta)}` : fmt(m.quantity)}</Td>
                     <Td num>
                       {editable(m)
                         ? <Input type="number" min="0" step="any" aria-label={`Rate for ${m.id}`} className="w-28 text-right" value={rateText[m.id] ?? ''} onChange={(e) => setRate(m, e.target.value)} />

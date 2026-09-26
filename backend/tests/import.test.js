@@ -205,7 +205,7 @@ const { HEADERS } = require('../utils/importParse');
     assert.strictEqual(p.b.summary.willCreate, 1); assert.strictEqual(p.b.movements[0].movementDate, '2025-04-01'); assert.strictEqual(p.b.materials[0].edp, 'DX2');
   });
   await t('docx with no table / wrong headers rejected with the specific message', async () => {
-    const head = 'Could not find a table with an "EDP No" column and at least one of "Receipt Qty" or "Issue Qty" (optional: Size, Stock Qty, Rate, Balance Qty, Receive Date, Issue Date) — got: ';
+    const head = 'Could not find a table with an "EDP No" (or "Material ID") column — got: ';
     let r = await upload('/imports/preview', await docx(null), 'a.docx'); is(r, 400);
     assert.strictEqual(r.b.message, head + 'no table');
     r = await upload('/imports/preview', await docx([['A', 'B'], ['1', '2']]), 'a.docx'); is(r, 400);
@@ -216,7 +216,7 @@ const { HEADERS } = require('../utils/importParse');
 
   // ---------- optional columns: only EDP No + one of Receipt Qty / Issue Qty are required ----------
   const dayNow = () => new Date().toISOString().slice(0, 10);
-  const NOQTY = 'File needs at least a Receipt Qty or Issue Qty column';
+  const NOQTY = 'File needs at least a Receipt Qty, Issue Qty, or Current Qty column (optional: Size/Description, Unit, Stock Qty, Rate, Balance Qty, Receive Date, Issue Date)';
   await t('minimal file (EDP No + Receipt Qty + Receive Date only) is accepted; missing Size/Stock/Rate/Balance behave like blank cells', async () => {
     const p = await preview(await xlsx([R('MN1', { rec: 5, rd: D('2025-06-01') })], ['EDP No', 'Receipt Qty', 'Receive Date'])); is(p, 200);
     assert.deepStrictEqual(p.b.parseErrors, []);
@@ -278,7 +278,7 @@ const { HEADERS } = require('../utils/importParse');
   });
   await t('no EDP No column is rejected even when quantities exist', async () => {
     const r = await preview(await xlsx([R('Q3', { size: 'x', rec: 1, rd: D('2025-01-01') })], ['Size', 'Receipt Qty', 'Receive Date'])); is(r, 400);
-    assert(r.b.message.startsWith('Could not find a table with an "EDP No" column and at least one of'), r.b.message);
+    assert(r.b.message.startsWith('Could not find a table with an "EDP No" (or "Material ID") column'), r.b.message);
     assert(r.b.message.endsWith('got: Size, Receipt Qty, Receive Date'), r.b.message);
   });
   await t('the same relaxation applies to Word tables (shared parser): dates missing -> today, no quantity column -> rejected', async () => {
@@ -294,6 +294,133 @@ const { HEADERS } = require('../utils/importParse');
     assert.deepStrictEqual(p.b.parseErrors, []);
     assert(p.b.movements.every((x) => !x.warning || /File balance/.test(x.warning)));
     assert.deepStrictEqual(p.b.movements.map((x) => x.movementDate), ['2025-08-01', '2025-08-02']);
+  });
+
+  // ---------- SYNC MODE: a Current Qty snapshot, no Receipt/Issue columns at all ----------
+  const RS = (edp, o = {}) => ({ 'EDP No': edp, Size: o.size, Unit: o.unit, 'Stock Qty': o.stock, Rate: o.rate, 'Current Qty': o.current });
+  const SYNC_ORDER = ['EDP No', 'Size', 'Unit', 'Stock Qty', 'Rate', 'Current Qty'];
+  const syncXlsx = (rows) => xlsx(rows, SYNC_ORDER);
+
+  await t('snapshot-only file (Material ID, Description, Unit, Current Qty, Rate) parses and plans in sync mode', async () => {
+    const p = await preview(await xlsx(
+      [{ 'Material ID': 'SY1', Description: 'Widget', Unit: 'Nos', 'Current Qty': 12, Rate: 3 }],
+      ['Material ID', 'Description', 'Unit', 'Current Qty', 'Rate'],
+    )); is(p, 200);
+    assert.strictEqual(p.b.mode, 'sync');
+    assert.deepStrictEqual(p.b.parseErrors, []);
+    assert.strictEqual(p.b.movements[0].status, 'new-material');
+    assert.strictEqual(p.b.movements[0].edp, 'SY1');
+  });
+
+  await t('new material from a snapshot file gets the file\'s Unit, not TBD', async () => {
+    const p = await preview(await syncXlsx([RS('SY2', { size: 'Bolt', unit: 'Box', current: 7, rate: 4 })])); is(p, 200);
+    assert.deepStrictEqual(p.b.materials, [{ edp: 'SY2', description: 'Bolt', unit: 'Box', openingQuantity: 7, openingRate: 4 }]);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.createdMaterials[0].unit, 'Box');
+    const m = await Material.findOne({ materialId: 'SY2' });
+    assert.strictEqual(m.unit, 'Box'); assert.strictEqual(m.currentQuantity, 7);
+  });
+
+  await t('missing Unit column: new material still defaults to TBD (unchanged)', async () => {
+    const p = await preview(await syncXlsx([RS('SY3', { current: 5, rate: 1 })])); is(p, 200);
+    assert.strictEqual(p.b.materials[0].unit, 'TBD');
+  });
+
+  await t('existing material, file Current Qty HIGHER than system: a positive adjustment IN is created, note names both numbers', async () => {
+    const m = await h.newMaterial('SY4', { unit: 'Nos', openingQuantity: 10, openingRate: 2 });
+    const p = await preview(await syncXlsx([RS('SY4', { current: 30, rate: 5 })])); is(p, 200);
+    assert.strictEqual(p.b.movements[0].status, 'sync-adjustment');
+    assert.strictEqual(p.b.movements[0].type, 'IN'); assert.strictEqual(p.b.movements[0].delta, 20);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.results[0].status, 'created');
+    const mv = await mongoose.models.Movement.findOne({ material: m, type: 'IN' }).sort({ createdAt: -1 });
+    assert.strictEqual(mv.quantity, 20); assert.strictEqual(mv.enteredRate, 5);
+    assert.strictEqual(mv.note, 'Stock sync from import: file states 30, system had 10');
+    assert.strictEqual((await Material.findById(m)).currentQuantity, 30);
+  });
+
+  await t('existing material, file Current Qty LOWER than system: an adjustment OUT is created, never rejected by the stock-exceeds check', async () => {
+    const m = await h.newMaterial('SY5', { unit: 'Nos', openingQuantity: 50, openingRate: 2 });
+    const p = await preview(await syncXlsx([RS('SY5', { current: 8 })])); is(p, 200);
+    assert.strictEqual(p.b.movements[0].type, 'OUT'); assert.strictEqual(p.b.movements[0].delta, -42);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.results[0].status, 'created');
+    const mv = await mongoose.models.Movement.findOne({ material: m, type: 'OUT' }).sort({ createdAt: -1 });
+    assert.strictEqual(mv.quantity, 42); assert.match(mv.note, /file states 8, system had 50/);
+    assert.strictEqual((await Material.findById(m)).currentQuantity, 8);
+  });
+
+  await t('adjustment OUT with no Rate column still commits (rate falls back to the material\'s current rate, never blocks)', async () => {
+    const m = await h.newMaterial('SY5B', { unit: 'Nos', openingQuantity: 20, openingRate: 9 });
+    const p = await preview(await xlsx([{ 'EDP No': 'SY5B', 'Current Qty': 3 }], ['EDP No', 'Current Qty'])); is(p, 200);
+    assert.strictEqual(p.b.movements[0].status, 'sync-adjustment');
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.results[0].status, 'created');
+    assert.strictEqual((await Material.findById(m)).currentQuantity, 3);
+  });
+
+  await t('existing material, file Current Qty EQUAL to system: zero movements, row marked already-matches', async () => {
+    const m = await h.newMaterial('SY6', { unit: 'Nos', openingQuantity: 15, openingRate: 2 });
+    const before = await mongoose.models.Movement.countDocuments({ material: m });
+    const p = await preview(await syncXlsx([RS('SY6', { current: 15 })])); is(p, 200);
+    assert.strictEqual(p.b.movements[0].status, 'already-matches'); assert.strictEqual(p.b.movements[0].delta, 0);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual(c.b.summary.created, 0);
+    assert.strictEqual(await mongoose.models.Movement.countDocuments({ material: m }), before);
+  });
+
+  await t('a file with BOTH Receipt/Issue AND Current Qty columns is movement mode: Current Qty is ignored entirely', async () => {
+    const m = await h.newMaterial('SY7', { unit: 'Nos', openingQuantity: 100, openingRate: 1 });
+    const p = await preview(await xlsx(
+      [{ 'EDP No': 'SY7', 'Receipt Qty': 5, Rate: 2, 'Receive Date': D('2025-09-01'), 'Current Qty': 999 }],
+      ['EDP No', 'Receipt Qty', 'Rate', 'Receive Date', 'Current Qty'],
+    )); is(p, 200);
+    assert.strictEqual(p.b.mode, 'movement');
+    assert.strictEqual(p.b.movements[0].mode, 'movement'); assert.strictEqual(p.b.movements[0].type, 'IN'); assert.strictEqual(p.b.movements[0].quantity, 5);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual((await Material.findById(m)).currentQuantity, 105); // not anywhere near 999
+  });
+
+  await t('re-importing the exact same snapshot file twice: the second import shows every row as already-matches, nothing new is created', async () => {
+    await h.newMaterial('SY8', { unit: 'Nos', openingQuantity: 4, openingRate: 1 });
+    const buf = await syncXlsx([RS('SY8', { current: 25, rate: 3 })]);
+    const p1 = await preview(buf); is(p1, 200);
+    await commit(p1.b); commits++;
+    const p2 = await preview(buf); is(p2, 200);
+    assert.strictEqual(p2.b.movements[0].status, 'already-matches');
+    const before = await mongoose.models.Movement.countDocuments({});
+    const c2 = await commit(p2.b); commits++;
+    assert.strictEqual(c2.b.summary.created, 0);
+    assert.strictEqual(await mongoose.models.Movement.countDocuments({}), before);
+  });
+
+  await t('a snapshot file with a NEGATIVE Current Qty value is rejected as a row-level parse error, not silently processed', async () => {
+    const p = await preview(await syncXlsx([RS('SY9', { current: -5 })])); is(p, 200);
+    assert.strictEqual(p.b.movements.length, 0);
+    assert.strictEqual(p.b.parseErrors.length, 1);
+    assert.match(p.b.parseErrors[0].message, /Current Qty must be a non-negative number/);
+  });
+
+  await t('"Material ID" is recognised identically to "EDP No"', async () => {
+    const m = await h.newMaterial('SY10', { unit: 'Nos', openingQuantity: 6, openingRate: 1 });
+    const p = await preview(await xlsx([{ 'Material ID': 'SY10', 'Current Qty': 9 }], ['Material ID', 'Current Qty'])); is(p, 200);
+    assert.strictEqual(p.b.movements[0].edp, 'SY10'); assert.strictEqual(p.b.movements[0].delta, 3);
+    assert(m);
+  });
+
+  await t('a snapshot file with no Current Qty and no Receipt/Issue column is rejected with the updated message', async () => {
+    const p = await preview(await xlsx([{ 'EDP No': 'SY11', Size: 'x' }], ['EDP No', 'Size'])); is(p, 400);
+    assert.strictEqual(p.b.message, NOQTY);
+  });
+
+  await t('two rows for the same material in one snapshot file: the later row wins, the earlier is superseded', async () => {
+    const m = await h.newMaterial('SY12', { unit: 'Nos', openingQuantity: 0, openingRate: 1 });
+    const p = await preview(await syncXlsx([RS('SY12', { current: 5 }), RS('SY12', { current: 11 })])); is(p, 200);
+    assert.strictEqual(p.b.movements.length, 2);
+    const sup = p.b.movements.find((x) => x.status === 'duplicate-skip'), win = p.b.movements.find((x) => x.status === 'sync-adjustment');
+    assert(sup && win); assert.strictEqual(win.delta, 11);
+    const c = await commit(p.b); commits++;
+    assert.strictEqual((await Material.findById(m)).currentQuantity, 11);
   });
 
   await t('.xls / .txt / no file / corrupt xlsx / oversize are rejected 400', async () => {

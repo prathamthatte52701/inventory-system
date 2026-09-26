@@ -6,6 +6,7 @@ const { replay, ORDER } = require('./costing');
 const dayOf = (d) => new Date(d).toISOString().slice(0, 10);
 const key = (type, quantity, day, rate) => `${type}|${quantity}|${day}|${type === 'IN' ? rate : ''}`;
 const inType = (a, b) => (a.type === b.type ? 0 : a.type === 'IN' ? -1 : 1); // within one row IN is posted before OUT
+const round4 = (n) => Math.round(n * 1e4) / 1e4;
 
 // Would inserting `cand` create a NEW negative balance? Mirrors postMovement. Returns { msg } or { next, balanceAfter }.
 function insertCheck(mat, chain, cand) {
@@ -26,9 +27,8 @@ function insertCheck(mat, chain, cand) {
   return { next, balanceAfter: after[idx].balanceAfter };
 }
 
-const round4 = (n) => Math.round(n * 1e4) / 1e4;
-
-async function buildPlan(rows, parseErrors) {
+// ---------- MOVEMENT MODE: transaction file (Receipt Qty / Issue Qty), unchanged from before Sync mode existed ----------
+async function buildMovementPlan(rows, parseErrors) {
   const edps = [...new Set(rows.map((r) => r.edp.toUpperCase()))];
   const mats = await Material.find({ materialId: { $in: edps } }).lean();
   const byEdp = new Map(mats.map((m) => [m.materialId, m]));
@@ -43,7 +43,7 @@ async function buildPlan(rows, parseErrors) {
   for (const r of rows) {
     const edp = r.edp.toUpperCase();
     if (!byEdp.has(edp) && !materials.some((m) => m.edp === edp)) // first row of a new EDP provides the opening values
-      materials.push({ edp, description: (r.size || edp).slice(0, 200), unit: 'TBD', openingQuantity: r.stock, openingRate: r.rate ?? 0 });
+      materials.push({ edp, description: (r.size || edp).slice(0, 200), unit: r.unit || 'TBD', openingQuantity: r.stock, openingRate: r.rate ?? 0 });
     if (!perEdp.has(edp)) perEdp.set(edp, []);
     const c = { row: r.row, edp, description: r.size || edp, balance: r.balance };
     if (r.receipt > 0) perEdp.get(edp).push({ ...c, type: 'IN', quantity: r.receipt, rate: r.rate, date: r.receiveDate, last: !(r.issue > 0), warn: r.receiveDefault ? "No Receive Date column in file — used today's date." : null });
@@ -62,7 +62,7 @@ async function buildPlan(rows, parseErrors) {
     const fileKeys = new Set();
     cands.sort((a, b) => a.date.localeCompare(b.date) || a.row - b.row || inType(a, b));
     for (const c of cands) {
-      const out = { id: `r${c.row}-${c.type}`, row: c.row, edp, description: c.description, type: c.type, quantity: c.quantity, rate: c.rate, movementDate: c.date, newMaterial: isNew };
+      const out = { id: `r${c.row}-${c.type}`, row: c.row, edp, description: c.description, type: c.type, quantity: c.quantity, rate: c.rate, movementDate: c.date, newMaterial: isNew, mode: 'movement' };
       if (c.warn) out.warning = c.warn;
       const skip = (status, reason) => { out.status = status; out.reason = reason; movements.push(out); };
       if (doc && doc.isActive === false) { skip('rejected', 'Material is inactive'); continue; }
@@ -89,6 +89,68 @@ async function buildPlan(rows, parseErrors) {
       willReject: count((m) => m.status === 'rejected'), parseErrors: parseErrors.length,
     },
   };
+}
+
+// ---------- SYNC MODE: a Current Qty snapshot, no Receipt/Issue columns ----------
+// Every row states what a material's balance IS today, not a transaction. A new material opens at that balance
+// (Stock Qty instead, if that column is also given). An existing material gets ONE adjustment movement — the
+// difference between the file's number and the system's — through the exact same shared movement-creation path
+// as everything else, so it is fully audited and never bypasses the OUT-exceeds-stock rule (it can't trip it: an
+// adjustment is built to land exactly on the file's number, which is never negative, since a negative Current Qty
+// is rejected as a row error before it ever reaches here).
+async function buildSyncPlan(rows, parseErrors) {
+  const usable = rows.filter((r) => r.current !== null); // a row with no Current Qty has nothing to sync — silently ignored, like a blank cell elsewhere
+  const edps = [...new Set(usable.map((r) => r.edp.toUpperCase()))];
+  const mats = await Material.find({ materialId: { $in: edps } }).lean();
+  const byEdp = new Map(mats.map((m) => [m.materialId, m]));
+
+  const lastRowFor = new Map(); // later rows for the same material win; earlier ones are superseded
+  for (const r of usable) lastRowFor.set(r.edp.toUpperCase(), r);
+
+  const materials = [], movements = [];
+  for (const r of usable) {
+    const edp = r.edp.toUpperCase();
+    const description = (r.size || edp).slice(0, 200);
+    const base = { id: `r${r.row}-SYNC`, row: r.row, edp, description, mode: 'sync', targetQty: r.current, rate: r.rate };
+    if (lastRowFor.get(edp) !== r) {
+      movements.push({ ...base, type: null, quantity: 0, delta: 0, movementDate: null, newMaterial: !byEdp.has(edp), status: 'duplicate-skip', reason: 'superseded by a later row for this material in this file' });
+      continue;
+    }
+    const doc = byEdp.get(edp);
+    if (!doc) {
+      materials.push({ edp, description, unit: r.unit || 'TBD', openingQuantity: r.stockGiven ? r.stock : r.current, openingRate: r.rate ?? 0 });
+      movements.push({ ...base, type: null, quantity: r.current, delta: r.current, movementDate: null, newMaterial: true, status: 'new-material', reason: null });
+      continue;
+    }
+    if (doc.isActive === false) {
+      movements.push({ ...base, type: null, quantity: 0, delta: 0, movementDate: null, newMaterial: false, status: 'rejected', reason: 'Material is inactive' });
+      continue;
+    }
+    const delta = round4(r.current - doc.currentQuantity);
+    if (delta === 0) {
+      movements.push({ ...base, type: null, quantity: 0, delta: 0, movementDate: null, newMaterial: false, status: 'already-matches', reason: null });
+      continue;
+    }
+    movements.push({
+      ...base, type: delta > 0 ? 'IN' : 'OUT', quantity: Math.abs(delta), delta, movementDate: new Date().toISOString().slice(0, 10),
+      newMaterial: false, status: 'sync-adjustment', reason: null,
+    });
+  }
+  movements.sort((a, b) => a.edp.localeCompare(b.edp) || a.row - b.row);
+  const count = (f) => movements.filter(f).length;
+  return {
+    parseErrors, materials, movements,
+    summary: {
+      totalRows: rows.length + parseErrors.length, newMaterials: materials.length,
+      willCreate: count((m) => m.status === 'sync-adjustment' || m.status === 'new-material'),
+      willSkip: count((m) => m.status === 'duplicate-skip' || m.status === 'already-matches'),
+      willReject: count((m) => m.status === 'rejected'), parseErrors: parseErrors.length,
+    },
+  };
+}
+
+async function buildPlan(rows, parseErrors, mode = 'movement') {
+  return mode === 'sync' ? buildSyncPlan(rows, parseErrors) : buildMovementPlan(rows, parseErrors);
 }
 
 // Duplicate test used by commit (inside the material lock, against the live DB). m.movementDate is a UTC-midnight Date.
