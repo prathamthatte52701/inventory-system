@@ -35,7 +35,8 @@ export default function AdminUsers() {
 
   const act = (fn) => run(async () => {
     setError('');
-    try { await fn(); await load(); } catch (e) { setError(errMsg(e)); }
+    try { await fn(); } catch (e) { setError(errMsg(e)); }
+    await load(); // always reload, even after an error: e.g. a losing 409 in a concurrent approve/reject leaves a stale row otherwise
   });
   const toggleDetails = async (u) => {
     if (open?.id === u._id) return setOpen(null);

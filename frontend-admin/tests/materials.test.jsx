@@ -202,6 +202,144 @@ describe('Admin materials: create / validate / edit / deactivate', () => {
   });
 });
 
+describe('Admin materials: chaos data', () => {
+  it('accepts unicode and emoji in description/unit and renders them unmangled', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: '  café 日本語 steel', unit: '⚙kg' });
+    await save();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    const row = idCells(id)[0].closest('tr');
+    // description is schema-trimmed (leading/trailing whitespace only); the unicode/emoji content itself is preserved
+    expect(row.textContent).toContain('café 日本語 steel');
+    expect(row.textContent).toContain('⚙kg');
+  });
+
+  it('accepts materialId/description/unit at exactly their max length caps (50/200/30), not off-by-one rejected', async () => {
+    const base = uid('MAT');
+    const id = (base + 'X'.repeat(50)).slice(0, 50);
+    const description = 'D'.repeat(200);
+    const unit = 'U'.repeat(30);
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description, unit });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    const row = idCells(id)[0].closest('tr');
+    expect(row.textContent).toContain(description);
+    expect(row.textContent).toContain(unit);
+  });
+
+  it('stores and renders a null byte / control character in description verbatim, without rejecting or corrupting it', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'A\u0000B', unit: 'Kg' });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    // neither express-validator's str() nor mongoose rejects or strips a null byte: it round-trips exactly
+    const api = as((await loginApi(ADMIN)).cookie);
+    const saved = (await api.get('/materials')).data.find((m) => m.materialId === id);
+    expect(saved.description).toBe('A\u0000B');
+  });
+
+  it('renders HTML/script-tag content in description as inert escaped text, never as real DOM nodes', async () => {
+    const id = uid('MAT');
+    const payload = '<script>window.__xss = 1;</script><img src=x onerror="window.__xss = 2">';
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: payload, unit: 'Kg' });
+    await save();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    const row = idCells(id)[0].closest('tr');
+    expect(row.querySelector('script')).toBeNull();
+    expect(row.querySelector('img')).toBeNull();
+    expect(row.textContent).toContain(payload);
+    expect(window.__xss).toBeUndefined();
+  });
+});
+
+describe('Admin materials: numeric edge cases', () => {
+  it('accepts an Opening Quantity of exactly 0, not rejected, and displays 0', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'X', unit: 'Kg', openingQuantity: '0' });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    expect(idCells(id)[0].closest('tr').textContent).toContain(fmt(0));
+  });
+
+  it('typing "-0" into Opening Rate is accepted and saved/displayed as plain 0, not "-0"', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'X', unit: 'Kg', openingRate: '-0' });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    const row = idCells(id)[0].closest('tr');
+    expect(row.textContent).not.toContain('-0');
+    expect(row.textContent).toContain(`₹${fmt(0)}`);
+  });
+
+  it('accepts scientific notation ("1e5") typed into a numeric field and stores/displays the expanded value', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'X', unit: 'Kg', openingQuantity: '1e5' });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+    expect(idCells(id)[0].closest('tr').textContent).toContain(fmt(100000));
+  });
+
+  it('accepts a Minimum Quantity of MAX_NUM - 0.0000001 (float precision near the cap), not spuriously rejected', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'X', unit: 'Kg', minimumQuantity: String(MAX_NUM - 0.0000001) });
+    await save();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+  });
+});
+
+describe('Admin materials: concurrent admin edits', () => {
+  it('editing only the description in the UI does not clobber a concurrent Opening Quantity change made by another admin session', async () => {
+    const id = uid('MAT');
+    await openPage();
+    await openAddForm();
+    await fillCreate({ materialId: id, description: 'Old desc', unit: 'Kg', openingQuantity: '100' });
+    await save();
+    await waitFor(() => expect(idCells(id)).toHaveLength(1));
+
+    // admin A opens the edit form: the form now holds a snapshot with openingQuantity=100
+    await userEvent.click(screen.getByRole('button', { name: `Edit ${id}` }));
+    expect(screen.getByLabelText('Opening Quantity')).toHaveValue(100);
+
+    // admin B: a second, independent admin session changes openingQuantity directly via the API
+    // while A's edit form is still open (no movements exist yet, so the backend allows it)
+    const bApi = as((await loginApi(ADMIN)).cookie);
+    const materialId = (await bApi.get('/materials')).data.find((m) => m.materialId === id)._id;
+    await bApi.put(`/materials/${materialId}`, { openingQuantity: 250 });
+
+    // admin A only edits the description - never touches Opening Quantity - and saves
+    await fillCreate({ description: 'New desc' });
+    await save();
+    await waitFor(() => expect(idCells(id)[0].closest('tr').textContent).toContain('New desc'));
+
+    // B's concurrent change must survive: A never edited Opening Quantity, so it must not be
+    // silently reverted to the stale value A's form loaded before B's change
+    const row = idCells(id)[0].closest('tr');
+    expect(row.textContent).toContain(fmt(250));
+  });
+});
+
 describe('Admin materials: non-admin lockout', () => {
   it('a non-admin cannot sign into the admin app and never reaches Materials management', async () => {
     const user = await makeUser('Not An Admin');

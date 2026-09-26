@@ -17,6 +17,7 @@ export default function AdminMaterials() {
   const [error, setError] = useState('');
   const [run] = useGuard();
   const [form, setForm] = useState(null); // null = closed; { _id? , ...fields }
+  const [original, setOriginal] = useState(null); // snapshot at edit-open time, so save() can diff out untouched fields
 
   const load = useCallback(() => api.get('/materials').then((r) => setItems(r.data)).catch((e) => setError(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
@@ -35,8 +36,15 @@ export default function AdminMaterials() {
       }
       try {
         const body = { ...rest, ...nums };
-        if (_id) await api.put(`/materials/${_id}`, body);
-        else await api.post('/materials', { materialId: materialId.trim(), ...body });
+        if (_id) {
+          // Only send fields the admin actually changed. Sending the full stale snapshot back (as before)
+          // would silently clobber a concurrent edit another admin made to a field this admin never touched
+          // (a lost update) - the server has no version check to catch it.
+          const changed = {};
+          for (const k of ['description', 'unit']) if (rest[k] !== original[k]) changed[k] = rest[k];
+          for (const k of ['openingRate', 'openingQuantity', 'minimumQuantity']) if (nums[k] !== Number(original[k])) changed[k] = nums[k];
+          await api.put(`/materials/${_id}`, changed);
+        } else await api.post('/materials', { materialId: materialId.trim(), ...body });
         setForm(null);
         await load();
       } catch (err) {
@@ -48,10 +56,14 @@ export default function AdminMaterials() {
     setError('');
     try { await api.patch(`/materials/${m._id}/${m.isActive ? 'deactivate' : 'reactivate'}`); await load(); } catch (err) { setError(errMsg(err)); }
   });
-  const edit = (m) => setForm({
-    _id: m._id, materialId: m.materialId, description: m.description, unit: m.unit,
-    openingRate: String(m.openingRate), openingQuantity: String(m.openingQuantity), minimumQuantity: String(m.minimumQuantity),
-  });
+  const edit = (m) => {
+    const f = {
+      _id: m._id, materialId: m.materialId, description: m.description, unit: m.unit,
+      openingRate: String(m.openingRate), openingQuantity: String(m.openingQuantity), minimumQuantity: String(m.minimumQuantity),
+    };
+    setForm(f);
+    setOriginal(f);
+  };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   return (

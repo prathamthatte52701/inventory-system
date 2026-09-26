@@ -36,3 +36,27 @@ describe('Admin users: deactivate / reactivate', () => {
     expect(await serverActive()).toBe(true);
   });
 });
+
+describe('Admin users: concurrent approve (atomicity + UI recovery)', () => {
+  it('when another session approves first, the UI that loses shows the 409 and drops the stale pending row', async () => {
+    const adminApi = as((await loginApi(ADMIN)).cookie); // the "other session", acting via a direct API call
+    const email = `${uid('race').toLowerCase()}@test.com`;
+    const su = await adminApi.post('/auth/signup', { name: 'Race Me', email, password: 'Secret#123' });
+
+    await session(ADMIN); // this session drives the real AdminUsers UI
+    renderApp('/users');
+    const approveBtn = await screen.findByRole('button', { name: `Approve ${email}` });
+
+    // the other session wins the race a moment before this session's own click lands
+    await adminApi.patch(`/users/${su.data.id}/approve`);
+
+    await userEvent.click(approveBtn);
+
+    // the losing UI must surface the real 409, not fail silently or crash
+    expect(await screen.findByRole('alert')).toHaveTextContent('User already processed');
+    // and the pending row must be gone once load() re-syncs with the server (the user shows up as approved
+    // in "All users" instead) — not left stuck in the pending table with a dead Approve button
+    await waitFor(() => expect(screen.queryByRole('button', { name: `Approve ${email}` })).toBeNull());
+    expect(await screen.findByRole('button', { name: `Deactivate ${email}` })).toBeInTheDocument();
+  });
+});
