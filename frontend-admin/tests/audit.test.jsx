@@ -231,6 +231,33 @@ describe('Admin audit log: race condition', () => {
   });
 });
 
+describe('Admin audit log: material deactivate/reactivate actions', () => {
+  it('the Action dropdown includes MATERIAL_DEACTIVATE/MATERIAL_REACTIVATE, and filtering by one narrows to a real generated entry', async () => {
+    const cookie = (await loginApi(ADMIN)).cookie;
+    const api = as(cookie);
+    const materialId = uid('AUD');
+    const mat = (await api.post('/materials', { materialId, description: 'Deactivate test', unit: 'Kg' })).data;
+    await api.patch(`/materials/${mat._id}/deactivate`); // real MATERIAL_DEACTIVATE entry
+    await session(ADMIN);
+
+    await openAudit();
+    const actionSelect = screen.getByLabelText('Action');
+    const optionValues = [...actionSelect.options].map((o) => o.value);
+    expect(optionValues).toContain('MATERIAL_DEACTIVATE');
+    expect(optionValues).toContain('MATERIAL_REACTIVATE');
+
+    await userEvent.selectOptions(actionSelect, 'MATERIAL_DEACTIVATE');
+    // the deactivate audit call carries no `details` (materialController.js's setActive omits it), so the row is
+    // identified by its action, not by a materialId in the Details column
+    await waitFor(() => expect(auditRows().length).toBeGreaterThan(0));
+    for (const row of auditRows()) {
+      expect(cellsOf(row)[2]).toHaveTextContent('MATERIAL_DEACTIVATE'); // action column only — other actions' option
+      expect(cellsOf(row)[2]).not.toHaveTextContent('MATERIAL_CREATE'); // text still exists in the <select>'s DOM,
+      expect(cellsOf(row)[2]).not.toHaveTextContent('MATERIAL_REACTIVATE'); // so this must be scoped to the row, not the page
+    }
+  });
+});
+
 describe('Admin audit log: non-admin access', () => {
   it('a non-admin cannot sign in to the admin app or ever reach the audit log', async () => {
     const u = await makeUser();
