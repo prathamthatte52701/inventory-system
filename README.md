@@ -344,6 +344,7 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 | Low / Out of Stock lists | `backend/tests/stockLists.test.js`, `frontend/tests/stockLists.test.jsx` | Boundaries match the status virtual, inactive excluded, empty workbook, live stock changes, buttons download only their own list |
 | Daily report | `backend/tests/dailyReport.test.js` | Summed Receipt/Issue, materials with no movement that day, inactive excluded, empty days, RETURN handling |
 | Import page / daily report UI | `frontend/tests/import.test.jsx`, `frontend/tests/dailyReport.test.jsx` | Preview rows and statuses, inline rate fix, commit rule, server-side result summary, date-picker download |
+| Import page state survives navigation | `frontend/tests/importPersist.test.jsx` | File/preview/inline edits still there after navigating away and back and no re-fetch, explicit Clear, auto-clear on commit, clears on logout, starts empty |
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
 | Admin backend | `backend/tests/admin.test.js` | `GET /audit` (filters, pagination, injection guards), `GET /analytics/*`, `GET /users/:id/activity`, admin-only access |
 | Fixes & limits | `backend/tests/fixes.test.js` | Login lockout (5 attempts / 15 min, survives restarts and other processes), movement pagination + streamed exports, httpOnly cookie session (Set-Cookie flags, logout revocation, CORS credentials), DB-level material lock incl. a crashed holder and two real processes |
@@ -380,9 +381,10 @@ inventory system/
 │   ├── src/
 │   │   ├── api.js                   # axios instance (cookie session), 401 interceptor, file download
 │   │   ├── AuthContext.jsx  ProtectedRoute.jsx  Navbar.jsx  MainLayout.jsx  App.jsx  useGuard.js
+│   │   ├── ImportContext.jsx        # the Import page's in-progress file/preview/edits, held above the router so navigating away and back doesn't lose them
 │   │   ├── components/LedgerTable.jsx   # read-only ledger
 │   │   ├── components/ui/           # shadcn-style kit (button, field, badge, alert, table, card, page)
-│   │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Reports
+│   │   └── pages/                   # Login · Signup · Dashboard · Materials · Movement · Ledger · Reports · Import
 │   └── tests/                       # harness + setup + user-app suites
 └── frontend-admin/                  # admin console, separate app (port 5174)
     ├── src/
