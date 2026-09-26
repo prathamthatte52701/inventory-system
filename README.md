@@ -337,7 +337,7 @@ Everything runs against real HTTP and a real MongoDB. Tests use **throwaway data
 cd backend  && npm test              # every backend suite below except stress
 cd backend  && npm run stress        # multi-user load test; slow against a remote DB, so it is NOT part of `npm test`
 cd frontend && npm test              # the user app's pages, rendered against the real API
-cd frontend-admin && npm test        # admin console: harness smoke test only (see the note under the table)
+cd frontend-admin && npm test        # admin console: smoke, users and ledger-correction suites, same harness pattern as frontend/ (see the note under the table)
 ```
 
 | Suite | File | Covers |
@@ -368,9 +368,10 @@ cd frontend-admin && npm test        # admin console: harness smoke test only (s
 | Signup rules | `frontend/tests/signupRules.test.jsx` | Live validation, strength meter, password eye, and the same messages coming back from the raw API |
 | Deactivation (user app) | `frontend/tests/deactivate.test.jsx` | A deactivated user is kicked out on the next click, sees the generic login error, and is restored on reactivate |
 | Admin users | `frontend-admin/tests/users.test.jsx` | Deactivate / reactivate from the admin Users page against the real backend (own row disabled) |
+| Admin ledger corrections | `frontend-admin/tests/corrections.test.jsx` | Correcting an IN through the UI (reversal + corrected rows, locked edits, server matches); a backend-rejected correction shows its message and adds no rows |
 | Admin smoke | `frontend-admin/tests/smoke.test.jsx` | Renders `/login` and expects the "Admin sign in" heading: proves install, run and pass for the admin harness, nothing more |
 
-> **Admin console coverage is still pending.** `frontend-admin/` has only the smoke test and the users test above, so its materials CRUD, movement corrections, user approve/reject, audit log and analytics pages are covered only indirectly (through the backend suites) until a proper suite is written there. The old in-app `/admin/*` UI tests were deleted from `frontend/tests/` when the admin console became a separate app.
+> **Admin console coverage is still partial.** `frontend-admin/` now shares the same harness pattern as `frontend/` (`tests/helpers.jsx`: `renderApp`, `session`, `adminApi`, `makeUser`), but materials CRUD, user approve/reject, the audit log and analytics pages are still covered only indirectly (through the backend suites), not by their own UI tests. The old in-app `/admin/*` UI tests were deleted from `frontend/tests/` when the admin console became a separate app.
 
 ## Project structure
 
@@ -401,7 +402,7 @@ inventory system/
     │   ├── api.js  AuthContext.jsx  RequireAdmin.jsx  Layout.jsx  App.jsx  useGuard.js
     │   ├── components/LedgerTable.jsx   # editable ledger (movement corrections)
     │   └── pages/                   # Login · AdminDashboard · AdminMaterials · AdminLedger · AdminUsers · AdminAudit · AdminAnalytics
-    └── tests/                       # harness (setup, globalSetup) + one smoke test; full admin coverage pending
+    └── tests/                       # helpers.jsx (renderApp/session/adminApi, mirrors frontend/tests/helpers.jsx) + globalSetup + smoke/users/ledger-correction suites; full admin coverage pending
 ```
 
 ## Security notes
