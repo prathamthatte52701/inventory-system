@@ -1,9 +1,7 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { AuthProvider } from '../src/AuthContext';
-import App from '../src/App';
+import { screen } from '@testing-library/react';
+import { renderApp } from './helpers';
 
 test('renders the admin login page', async () => {
-  render(<MemoryRouter initialEntries={['/login']}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  renderApp('/login');
   expect(await screen.findByRole('heading', { name: 'Admin sign in' })).toBeInTheDocument();
 });
