@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import api, { LOGOUT_EVENT } from './api';
+import api, { clearSession, LOGOUT_EVENT } from './api';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -30,7 +30,8 @@ export function AuthProvider({ children }) {
   };
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch { /* cookie clear is best-effort client side; server clears it on success */ }
-    setUser(null);
+    clearSession(); // one shared signal for "the session just ended" — this provider's own onLogout above picks it
+    // up (setUser(null)), and anything else holding per-user state (e.g. an in-progress import) clears too
   };
 
   return <AuthContext.Provider value={{ user, ready, login, logout, isAdmin: user?.role === 'admin' }}>{children}</AuthContext.Provider>;

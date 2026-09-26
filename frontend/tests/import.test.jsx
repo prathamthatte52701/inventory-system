@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import api from '../src/api';
 import Import from '../src/pages/Import';
+import { ImportProvider } from '../src/ImportContext';
 
 const mv = (o) => ({ row: 2, edp: 'E1', description: 'Bolt', type: 'IN', quantity: 5, rate: 10, movementDate: '2025-01-02', status: 'ok', newMaterial: false, ...o });
 const PLAN = {
@@ -31,7 +32,7 @@ function mock(plan = PLAN) {
   post = vi.spyOn(api, 'post').mockImplementation(async (url) => ({ data: url === '/imports/preview' ? plan : RESULT }));
 }
 async function upload() {
-  render(<MemoryRouter><Import /></MemoryRouter>);
+  render(<MemoryRouter><ImportProvider><Import /></ImportProvider></MemoryRouter>);
   const user = userEvent.setup();
   await user.upload(document.querySelector('input[type=file]'), new File(['x'], 'a.xlsx'));
   await user.click(screen.getByRole('button', { name: 'Preview' }));
@@ -99,7 +100,7 @@ describe('Import page', () => {
   });
 
   it('renders import history', async () => {
-    render(<MemoryRouter><Import /></MemoryRouter>);
+    render(<MemoryRouter><ImportProvider><Import /></ImportProvider></MemoryRouter>);
     const row = (await screen.findByText('old.xlsx')).closest('tr');
     expect(within(row).getByText('Asha')).toBeInTheDocument();
     expect(row).toHaveTextContent('2025-01-01');
@@ -107,7 +108,7 @@ describe('Import page', () => {
 
   it('shows server error in an alert', async () => {
     api.post.mockRejectedValue({ response: { data: { message: 'Could not find a table in the document' } } });
-    render(<MemoryRouter><Import /></MemoryRouter>);
+    render(<MemoryRouter><ImportProvider><Import /></ImportProvider></MemoryRouter>);
     const user = userEvent.setup();
     await user.upload(document.querySelector('input[type=file]'), new File(['x'], 'a.docx'));
     await user.click(screen.getByRole('button', { name: 'Preview' }));

@@ -6,6 +6,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { vi } from 'vitest';
 import { AuthProvider } from '../src/AuthContext';
+import { ImportProvider } from '../src/ImportContext';
 import App from '../src/App';
 
 export const BASE = 'http://127.0.0.1:5055/api';
@@ -56,7 +57,7 @@ function HistoryButtons() {
 export const renderApp = (route = '/', { entries, index } = {}) =>
   render(
     <MemoryRouter initialEntries={entries || [route]} initialIndex={index}>
-      <AuthProvider><App /><HistoryButtons /></AuthProvider>
+      <AuthProvider><ImportProvider><App /><HistoryButtons /></ImportProvider></AuthProvider>
     </MemoryRouter>
   );
 

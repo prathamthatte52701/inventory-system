@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { errMsg, fmt, parseNum } from '../api';
 import { useGuard } from '../useGuard';
+import { useImportState } from '../ImportContext';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,60 +19,64 @@ const RES_TONE = { created: 'green', 'skipped-duplicate': 'slate', failed: 'red'
 const PAGE_SIZE = 20;
 
 export default function Import() {
-  const [file, setFile] = useState(null);
-  const [plan, setPlan] = useState(null); // preview response; movements are edited in place
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  // The selected file, the preview plan, any inline rate fixes and the commit result all live in ImportContext
+  // (mounted at the app root), not in this component's own state — so navigating away and back leaves them
+  // exactly as they were. This is a client-side router: leaving /import never reloads the browser, it only
+  // unmounts this component, and the File object was never tied to the DOM input to begin with.
+  const { file, plan, result, error, rateText, patch, reset } = useImportState();
+  const [busy, setBusy] = useState(false); // purely a loading spinner for the in-flight preview request; not worth persisting
   const [commitRun, committing] = useGuard();
-  const [rateText, setRateText] = useState({});
   const fileRef = useRef(null);
 
   const [hist, setHist] = useState({ data: [], total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const loadHistory = useCallback(() =>
-    api.get('/imports', { params: { page, limit: PAGE_SIZE } }).then((r) => setHist(r.data)).catch((e) => setError(errMsg(e))), [page]);
+    api.get('/imports', { params: { page, limit: PAGE_SIZE } }).then((r) => setHist(r.data)).catch((e) => patch({ error: errMsg(e) })), [page, patch]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  const pickFile = (f) => patch({ file: f, plan: null, result: null, error: '' });
 
   const preview = async () => {
     if (!file) return;
-    setBusy(true); setError(''); setResult(null);
+    setBusy(true); patch({ error: '', result: null });
     try {
       const fd = new FormData(); fd.append('file', file);
       const { data } = await api.post('/imports/preview', fd);
-      setPlan(data); setRateText({});
-    } catch (e) { setPlan(null); setError(errMsg(e)); } finally { setBusy(false); }
+      patch({ plan: data, rateText: {} });
+    } catch (e) { patch({ plan: null, error: errMsg(e) }); } finally { setBusy(false); }
   };
 
   // Client-side edit of a missing rate: valid rate >= 0 -> creatable, otherwise back to rejected.
   const setRate = (m, text) => {
-    setRateText((t) => ({ ...t, [m.id]: text }));
     const n = parseNum(text);
     const ok = !Number.isNaN(n);
-    setPlan((p) => ({
-      ...p,
-      movements: p.movements.map((x) => x.id !== m.id ? x : {
-        ...x,
-        rate: ok ? n : null,
-        status: ok ? (x.newMaterial ? 'new-material' : 'ok') : 'rejected',
-        reason: ok ? undefined : NEEDS_RATE,
-      }),
+    patch((s) => ({
+      rateText: { ...s.rateText, [m.id]: text },
+      plan: {
+        ...s.plan,
+        movements: s.plan.movements.map((x) => x.id !== m.id ? x : {
+          ...x,
+          rate: ok ? n : null,
+          status: ok ? (x.newMaterial ? 'new-material' : 'ok') : 'rejected',
+          reason: ok ? undefined : NEEDS_RATE,
+        }),
+      },
     }));
   };
   // editable if rejected for a missing rate (or already edited: it keeps its input)
   const editable = (m) => m.type === 'IN' && (m.reason === NEEDS_RATE || m.id in rateText);
 
   const commit = () => commitRun(async () => {
-    setError('');
+    patch({ error: '' });
     try {
       const { data } = await api.post('/imports/commit', { filename: plan.filename, materials: plan.materials, movements: plan.movements });
-      setResult(data); setPlan(null); setFile(null); setRateText({});
+      patch({ result: data, plan: null, file: null, rateText: {} }); // a successful commit clears the form so the same file can't be re-committed by accident
       if (fileRef.current) fileRef.current.value = '';
       if (page !== 1) setPage(1); else loadHistory();
-    } catch (e) { setError(errMsg(e)); }
+    } catch (e) { patch({ error: errMsg(e) }); }
   });
 
-  const reset = () => { setResult(null); setPlan(null); setError(''); };
+  const clearAll = () => { reset(); if (fileRef.current) fileRef.current.value = ''; };
   const count = (s) => plan.movements.filter((m) => (s === 'create' ? m.status === 'ok' || m.status === 'new-material' || m.status === 'sync-adjustment' : m.status === s)).length;
   const create = plan ? count('create') : 0;
   const newMats = plan?.materials.filter((m) => m.unit === 'TBD') ?? [];
@@ -87,11 +92,13 @@ export default function Import() {
           <div className="flex flex-wrap items-end gap-3">
             <Field label="File (.xlsx, .xls, .docx)">
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.docx"
-                onChange={(e) => { setFile(e.target.files?.[0] || null); setPlan(null); }}
+                onChange={(e) => pickFile(e.target.files?.[0] || null)}
                 className="text-sm text-fg file:mr-3 file:rounded-md file:border file:border-line file:bg-transparent file:px-3 file:py-1.5 file:text-fg" />
             </Field>
             <Button onClick={preview} disabled={!file || busy || committing}>{busy ? 'Reading file…' : 'Preview'}</Button>
+            {(file || plan) && <Button variant="ghost" onClick={clearAll} disabled={busy || committing}>Clear</Button>}
           </div>
+          {file && <p className="mt-2 text-sm text-muted">Selected: <span className="text-fg">{file.name}</span></p>}
         </Card>
       )}
 
@@ -173,7 +180,7 @@ export default function Import() {
           </TableWrap>
           <div className="flex items-center gap-3">
             <Link to="/materials" className="text-sm text-primary underline">Go to Materials</Link>
-            <Button onClick={reset}>Import another file</Button>
+            <Button onClick={clearAll}>Import another file</Button>
           </div>
         </section>
       )}
