@@ -1,9 +1,30 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 
 const app = express();
+// helmet's defaults assume a server that also renders HTML/JS itself; this backend only ever returns JSON (or a
+// streamed report file) to two separate SPA frontends on other origins/ports, credentialed via CORS below — so a
+// few defaults are wrong for this shape and are turned off or customised rather than accepted as-is:
+//   - contentSecurityPolicy: a document-oriented CSP is inert (and occasionally misleading in devtools) for a
+//     JSON-only API that never serves HTML; each frontend is its own document and owns its own CSP concern.
+//   - crossOriginResourcePolicy: helmet's default is 'same-origin', which makes browsers refuse to hand a
+//     cross-origin caller the response body even though CORS above explicitly allows it — a well-known
+//     helmet+CORS interaction. This API is deliberately read cross-origin by both frontends, so it's set to
+//     'cross-origin' on purpose, not left to the default.
+//   - strictTransportSecurity (HSTS): only makes sense once the app is actually served over HTTPS. Sending it
+//     during plain-HTTP local dev is at best a no-op (browsers ignore HSTS delivered over HTTP) and at worst
+//     confusing, so it's gated on the same COOKIE_SECURE flag the session cookie already uses for the same reason.
+// Everything else (frameguard, nosniff, hidden X-Powered-By, referrer policy, disabled legacy XSS-filter header,
+// etc.) is left at helmet's default — none of it interacts with fetch/XHR or the report downloads below.
+const secureDeploy = process.env.COOKIE_SECURE === 'true';
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  ...(secureDeploy ? {} : { strictTransportSecurity: false }),
+}));
 // Credentialed CORS: only the listed origins may send the session cookie (the wildcard is not allowed with credentials).
 // Vite's dev proxy makes the app same-origin, so this only matters when the frontend is served from another origin.
 const allowedOrigins = () => (process.env.CORS_ORIGIN || 'http://localhost:2000').split(',').map((s) => s.trim()).filter(Boolean);
@@ -17,7 +38,6 @@ app.use('/api/imports', require('./middleware/auth').requireAuth, express.json({
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => { // express 5 leaves req.body undefined when no JSON was sent; controllers expect an object
   if (req.body === undefined) req.body = {};
-  res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev')); // morgan never logs bodies
