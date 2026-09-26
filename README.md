@@ -358,6 +358,7 @@ cd frontend-admin && npm test        # admin console: smoke, users and ledger-co
 | End-to-end | `backend/tests/e2e.test.js` | Signup → approve → material → IN/OUT → dashboard → edit first movement → all 3 reports |
 | Admin backend | `backend/tests/admin.test.js` | `GET /audit` (filters, pagination, injection guards), `GET /analytics/*`, `GET /users/:id/activity`, admin-only access |
 | Fixes & limits | `backend/tests/fixes.test.js` | Login lockout (5 attempts / 15 min, survives restarts and other processes), movement pagination + streamed exports, httpOnly cookie session (Set-Cookie flags, logout revocation, CORS credentials), DB-level material lock incl. a crashed holder and two real processes |
+| Security headers | `backend/tests/security.test.js` | helmet's real response headers, CSP off, `Cross-Origin-Resource-Policy: cross-origin`, HSTS gated on `COOKIE_SECURE`, CORS preflight and a disallowed origin, a real report download's `Content-Disposition` still exposed cross-origin and the file intact |
 | Hardening | `backend/tests/hardening.test.js` | Shared pagination/error helpers, `GET /users` pagination, signup rate limit (default 5 per IP per hour), new indexes, generic "Invalid material data" message |
 | Stress | `backend/tests/stress.test.js` | 1 admin + 4 users hammering read endpoints on a large history while writes are in flight. Run with `npm run stress` |
 | **QA (adversarial)** | `backend/tests/qa.test.js` | Spec compliance against the workflow PDF, auth-bypass matrix, role escalation, injection, oversized/NaN/Infinity inputs, malformed ids, 20 simultaneous OUTs, mixed-concurrency chaos, 19-movement history with 5 edits checked against an independent oracle |
@@ -531,8 +532,14 @@ Checked and already correct, no fix needed: cap-boundary strings (materialId 50 
 
 **Known limitation, not fixed (out of scope for a small, contained fix):** two admins editing the *same* field of the same material at the same time is still last-write-wins with no warning — the backend has no optimistic-concurrency (version/ETag) check to catch that case, only the specific "resent-a-stale-field" bug above was fixed. Closing that fully would need a real backend schema change.
 
+### Security headers (helmet)
+`backend/app.js` runs [`helmet`](https://helmetjs.github.io/) ahead of everything else, but not with its bare defaults — this backend only ever returns JSON (or a streamed report file) to two separate SPA frontends on other origins, credentialed via the CORS middleware right after it, and a few of helmet's defaults are built for a server that also renders its own HTML:
+- **`Content-Security-Policy` is off.** A document-oriented CSP is inert for a JSON-only API that never serves HTML; each frontend is its own document and owns its own CSP.
+- **`Cross-Origin-Resource-Policy` is set to `cross-origin`, not helmet's `same-origin` default.** The default would make browsers refuse to hand a cross-origin caller the response body even though CORS explicitly allows it — a well-known helmet+CORS interaction — and this API is deliberately read cross-origin by both frontends.
+- **`Strict-Transport-Security` (HSTS) is gated on `COOKIE_SECURE=true`**, the same flag the session cookie already uses. It only means anything once the app is genuinely served over HTTPS; sending it during plain-HTTP local dev is at best a no-op and not worth the confusion.
+- Everything else — `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff` (now via helmet instead of a hand-rolled header), hidden `X-Powered-By`, `Referrer-Policy: no-referrer`, the disabled legacy `X-XSS-Protection` header, and the rest — is left at helmet's default; none of it touches fetch/XHR or the report downloads. `backend/tests/security.test.js` asserts the real response headers, a real cross-origin preflight, a disallowed origin getting no CORS headers, and a real report download still exposing `Content-Disposition` and returning an intact file — checked against actual HTTP responses, not read from source.
+
 **Known limitations** (not bugs against the spec, but worth knowing before exposing this publicly):
-- `helmet`-style security headers beyond `nosniff` are not set.
 - The cookie is `Secure`: over plain HTTP on a non-localhost host set `COOKIE_SECURE=false`, and set `CORS_ORIGIN` if the frontend is on another origin.
 - Anyone can sign up (by design); an existing email returns 409, which reveals that the email is registered.
 
