@@ -1,5 +1,7 @@
 // Shared integration harness: throwaway DB, seeded admin + one approved normal user.
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const path = require('path');
+const DB_NAME = process.env.TEST_DB || 'inventory_test';
+require('../utils/testEnvGuard').loadTestEnv(path.join(__dirname, '..'), DB_NAME); // backend/.env.test if present, else backend/.env + warning; refuses to run against anything that looks like the real database
 process.env.NODE_ENV = 'test';
 process.env.SIGNUP_RATE_MAX = process.env.SIGNUP_RATE_MAX || '10000'; // suite signs up many users from one IP; dedicated tests lower it
 const assert = require('assert');
@@ -16,7 +18,7 @@ const tokenFromHeaders = (headers) => {
 
 module.exports = async function setup(label) {
   let base, pass = 0, fail = 0;
-  await require('../config/db')({ dbName: process.env.TEST_DB || 'inventory_test' });
+  await require('../config/db')({ dbName: DB_NAME });
   await mongoose.connection.dropDatabase();
   await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
   const server = app.listen(0);

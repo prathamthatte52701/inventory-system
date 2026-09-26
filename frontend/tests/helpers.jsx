@@ -13,9 +13,12 @@ export const BASE = 'http://127.0.0.1:5055/api';
 const backend = path.resolve(__dirname, '../../backend');
 export const backendRequire = createRequire(path.join(backend, 'x.js'));
 
-// credentials come from the real backend/.env (never hard-coded here)
+// credentials come from whichever env file globalSetup.js actually used (backend/.env.test if present, else
+// backend/.env) — never hard-coded here, and never assumed to be .env: the server this test talks to was seeded
+// from that same file, so reading the other one would silently break the moment the two diverge.
+const envFile = fs.existsSync(path.join(backend, '.env.test')) ? '.env.test' : '.env';
 const env = Object.fromEntries(
-  fs.readFileSync(path.join(backend, '.env'), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])
+  fs.readFileSync(path.join(backend, envFile), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])
 );
 export const JWT_SECRET = env.JWT_SECRET;
 export const ADMIN = { email: env.ADMIN1_EMAIL, password: env.ADMIN1_PASSWORD };
